@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 from typing import Any, Dict, Generator, List, Optional
 try:
     from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
@@ -33,6 +34,7 @@ COLLECTION_REPORTS = "reports"
 COLLECTION_AUDIT_BLOCKS = "audit_blocks"
 COLLECTION_CHECKPOINTS = "checkpoints"
 COLLECTION_DELIBERATIONS = "agent_deliberations"
+COLLECTION_ROOMS = "negotiation_rooms"
 
 
 def get_mongodb_uri() -> str:
@@ -182,9 +184,66 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
         await db[COLLECTION_DELIBERATIONS].create_index([("event_id", pymongo.ASCENDING)], unique=True)
         await db[COLLECTION_DELIBERATIONS].create_index([("matter_id", pymongo.ASCENDING), ("timestamp", pymongo.ASCENDING)])
 
+        # 11. negotiation_rooms: room_id (unique), status
+        await db[COLLECTION_ROOMS].create_index([("room_id", pymongo.ASCENDING)], unique=True)
+        await db[COLLECTION_ROOMS].create_index([("status", pymongo.ASCENDING)])
+
         logger.info("[MONGODB] Practical indexes verified on all collections.")
     except Exception as ex:
         logger.warning(f"[MONGODB] Warning while creating collection indexes: {ex}")
+
+
+_sync_mongo_client: Optional[pymongo.MongoClient] = None
+
+
+def get_sync_mongo_db():
+    global _sync_mongo_client
+    uri = get_mongodb_uri()
+    if not uri:
+        return None
+    if _sync_mongo_client is None:
+        try:
+            _sync_mongo_client = pymongo.MongoClient(uri, serverSelectionTimeoutMS=3000)
+        except Exception as e:
+            logger.warning(f"[MONGODB] Failed to create sync MongoClient: {e}")
+            return None
+    return _sync_mongo_client[get_database_name()]
+
+
+def sync_room_to_mongo(room_dict: Dict[str, Any]) -> None:
+    """Helper to persist/upsert negotiation room document into MongoDB Atlas."""
+    try:
+        room_id = room_dict.get("room_id")
+        if not room_id:
+            return
+        clean_id = room_id.strip().upper()
+        # Clean copy for MongoDB
+        payload = dict(room_dict)
+        payload["room_id"] = clean_id
+        if "updated_at" not in payload:
+            payload["updated_at"] = datetime.utcnow().isoformat()
+
+        db = get_sync_mongo_db()
+        if db is not None:
+            db[COLLECTION_ROOMS].replace_one({"room_id": clean_id}, payload, upsert=True)
+    except Exception as ex:
+        logger.debug(f"[MONGODB] sync_room_to_mongo error: {ex}")
+
+
+def get_room_from_mongo_sync(room_id: str) -> Optional[Dict[str, Any]]:
+    """Synchronous read for room from MongoDB Atlas."""
+    try:
+        clean_id = (room_id or "").strip().upper()
+        if not clean_id:
+            return None
+        db = get_sync_mongo_db()
+        if db is None:
+            return None
+        return db[COLLECTION_ROOMS].find_one({"room_id": clean_id}, {"_id": 0})
+    except Exception as ex:
+        logger.debug(f"[MONGODB] get_room_from_mongo_sync error: {ex}")
+        return None
+
 
 
 async def store_deliberation_event(event_data: Dict[str, Any]) -> None:

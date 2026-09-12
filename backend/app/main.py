@@ -34,10 +34,10 @@ app = FastAPI(
 )
 
 
-# CORS configuration allowing FRONTEND_URL
+# CORS configuration allowing multi-system access (local network IPs, domains, and localhost)
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[settings.FRONTEND_URL],
+    allow_origin_regex=r"^https?://.*",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

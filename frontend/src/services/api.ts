@@ -15,9 +15,21 @@
  *   • Real-Time Pipeline SSE Stream (EventSource observer for live agent progress)
  */
 
-export const BACKEND_BASE_URL =
-  (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) ||
-  'http://localhost:8000';
+export const getBackendBaseUrl = (): string => {
+  if (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  if (typeof window !== 'undefined') {
+    const custom =
+      sessionStorage.getItem('negotia_backend_url') ||
+      localStorage.getItem('negotia_backend_url');
+    if (custom) return custom.replace(/\/+$/, '');
+  }
+  // Default to relative URL so Vite proxy or reverse-proxy seamlessly forwards /api and /ws
+  return '';
+};
+
+export const BACKEND_BASE_URL = getBackendBaseUrl();
 
 // ═════════════════════════════════════════════════════════════════════════════
 // Generic HTTP Client Helper
@@ -36,7 +48,8 @@ export class ApiError extends Error {
 }
 
 async function request<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
-  const url = `${BACKEND_BASE_URL}${endpoint}`;
+  const baseUrl = getBackendBaseUrl();
+  const url = `${baseUrl}${endpoint}`;
   const headers = new Headers(options.headers || {});
 
   // Do not set Content-Type for FormData as the browser automatically sets multipart/form-data with boundary
@@ -916,8 +929,17 @@ export async function getRoomMessages(roomId: string): Promise<{ room_id: string
 export function getRoomWebSocketUrl(roomId: string, token: string): string {
   const cleanId = (roomId || '').trim().toUpperCase();
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  // Use current host which proxies /ws via Vite dev server or direct backend in production
-  return `${protocol}//${window.location.host}/ws/rooms/${encodeURIComponent(cleanId)}?token=${encodeURIComponent(token)}`;
+  const customBase = getBackendBaseUrl();
+  let host = window.location.host;
+  if (customBase && customBase.startsWith('http')) {
+    try {
+      const u = new URL(customBase);
+      host = u.host;
+    } catch {
+      // fallback to current window host
+    }
+  }
+  return `${protocol}//${host}/ws/rooms/${encodeURIComponent(cleanId)}?token=${encodeURIComponent(token)}`;
 }
 
 export function getNegotiationWebSocketUrl(
@@ -927,11 +949,21 @@ export function getNegotiationWebSocketUrl(
 ): string {
   const cleanId = (roomId || '').trim().toUpperCase();
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const customBase = getBackendBaseUrl();
+  let host = window.location.host;
+  if (customBase && customBase.startsWith('http')) {
+    try {
+      const u = new URL(customBase);
+      host = u.host;
+    } catch {
+      // fallback to current window host
+    }
+  }
   const params = new URLSearchParams();
   if (token) params.set('token', token);
   if (participantId) params.set('participant_id', participantId);
   const q = params.toString() ? `?${params.toString()}` : '';
-  return `${protocol}//${window.location.host}/ws/negotiation/${encodeURIComponent(cleanId)}${q}`;
+  return `${protocol}//${host}/ws/negotiation/${encodeURIComponent(cleanId)}${q}`;
 }
 
 // ═════════════════════════════════════════════════════════════════════════════

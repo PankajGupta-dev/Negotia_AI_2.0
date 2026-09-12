@@ -20,8 +20,40 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import NegotiationRoomDB
+from app.db.database import sync_room_to_mongo, get_room_from_mongo_sync
 
 logger = logging.getLogger(__name__)
+
+
+def sync_room(room: NegotiationRoomDB) -> None:
+    """Sync negotiation room document to cloud MongoDB Atlas."""
+    try:
+        sync_room_to_mongo({
+            "id": room.id or room.room_id,
+            "room_id": room.room_id or room.id,
+            "matter_id": room.matter_id,
+            "creator_id": room.creator_id,
+            "participant_id": room.participant_id,
+            "status": room.status,
+            "created_at": room.created_at.isoformat() if room.created_at else datetime.utcnow().isoformat(),
+            "closed_at": room.closed_at.isoformat() if room.closed_at else None,
+            "title": room.title,
+            "passcode": room.passcode,
+            "creator_name": room.creator_name,
+            "creator_role": room.creator_role,
+            "creator_token": room.creator_token,
+            "guest_id": room.guest_id,
+            "guest_name": room.guest_name,
+            "guest_role": room.guest_role,
+            "guest_token": room.guest_token,
+            "guest_status": room.guest_status,
+            "active_participants_count": room.active_participants_count,
+            "messages": list(room.messages or []),
+            "shared_state": dict(room.shared_state or {}),
+            "updated_at": room.updated_at.isoformat() if room.updated_at else datetime.utcnow().isoformat(),
+        })
+    except Exception as e:
+        logger.debug(f"[RoomService] MongoDB sync warning: {e}")
 
 
 def generate_collision_safe_room_id(db: Session, prefix: str = "NEG", max_attempts: int = 20) -> str:
@@ -38,7 +70,13 @@ def generate_collision_safe_room_id(db: Session, prefix: str = "NEG", max_attemp
             (func.upper(NegotiationRoomDB.room_id) == candidate_id) | (func.upper(NegotiationRoomDB.id) == candidate_id)
         ).first()
         if not existing:
-            return candidate_id
+            # Also check MongoDB Atlas to prevent cross-server collision
+            try:
+                doc = get_room_from_mongo_sync(candidate_id)
+                if not doc:
+                    return candidate_id
+            except Exception:
+                return candidate_id
 
     # Fallback to 8 chars if high collision density
     suffix = "".join(secrets.choice(alphabet) for _ in range(8))
@@ -93,6 +131,9 @@ def create_room(
     db.commit()
     db.refresh(room)
 
+    # Sync to MongoDB Atlas cloud database
+    sync_room(room)
+
     logger.info(f"[RoomService] Created room '{room_id}' for creator '{creator_id}' (passcode_protected={clean_passcode is not None}).")
     return room
 
@@ -102,9 +143,68 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
     if not room_id:
         return None
     clean_id = room_id.strip().upper()
-    return db.query(NegotiationRoomDB).filter(
+    room = db.query(NegotiationRoomDB).filter(
         (func.upper(NegotiationRoomDB.room_id) == clean_id) | (func.upper(NegotiationRoomDB.id) == clean_id)
     ).first()
+    if room:
+        return room
+
+    # Check MongoDB Atlas fallback (multi-system cross-host synchronization)
+    try:
+        doc = get_room_from_mongo_sync(clean_id)
+        if doc:
+            c_at = None
+            if doc.get("created_at"):
+                try:
+                    c_at = datetime.fromisoformat(doc["created_at"])
+                except Exception:
+                    c_at = datetime.utcnow()
+            cl_at = None
+            if doc.get("closed_at"):
+                try:
+                    cl_at = datetime.fromisoformat(doc["closed_at"])
+                except Exception:
+                    pass
+            up_at = None
+            if doc.get("updated_at"):
+                try:
+                    up_at = datetime.fromisoformat(doc["updated_at"])
+                except Exception:
+                    up_at = datetime.utcnow()
+
+            room = NegotiationRoomDB(
+                id=doc.get("room_id") or clean_id,
+                room_id=doc.get("room_id") or clean_id,
+                matter_id=doc.get("matter_id"),
+                creator_id=doc.get("creator_id") or "creator",
+                participant_id=doc.get("participant_id"),
+                status=doc.get("status", "waiting"),
+                created_at=c_at or datetime.utcnow(),
+                closed_at=cl_at,
+                title=doc.get("title", "Private Negotiation Room"),
+                passcode=doc.get("passcode") or "",
+                creator_name=doc.get("creator_name"),
+                creator_role=doc.get("creator_role", "buyer"),
+                creator_token=doc.get("creator_token"),
+                guest_id=doc.get("guest_id"),
+                guest_name=doc.get("guest_name"),
+                guest_role=doc.get("guest_role", "seller"),
+                guest_token=doc.get("guest_token"),
+                guest_status=doc.get("guest_status", "none"),
+                active_participants_count=doc.get("active_participants_count", 1),
+                messages=doc.get("messages", []),
+                shared_state=doc.get("shared_state", {}),
+                updated_at=up_at or datetime.utcnow(),
+            )
+            db.add(room)
+            db.commit()
+            db.refresh(room)
+            logger.info(f"[RoomService] Hydrated room '{clean_id}' from MongoDB Atlas to local session.")
+            return room
+    except Exception as ex:
+        logger.debug(f"[RoomService] Mongo get_room fallback error: {ex}")
+
+    return None
 
 
 def request_join(
@@ -159,6 +259,7 @@ def request_join(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
     logger.info(f"[RoomService] Participant '{participant_id}' requested admission to room '{room_id}'.")
     return room
 
@@ -209,6 +310,7 @@ def admit_participant(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
     logger.info(f"[RoomService] Participant '{room.participant_id}' admitted to room '{room_id}' by creator '{creator_id}'.")
     return room
 
@@ -259,6 +361,7 @@ def reject_participant(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
     logger.info(f"[RoomService] Pending participant rejected for room '{room_id}' by creator '{creator_id}'.")
     return room
 
@@ -308,6 +411,7 @@ def leave_room(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
     logger.info(f"[RoomService] Participant '{participant_id}' left room '{room_id}'. Historical data preserved.")
     return room
 
@@ -349,6 +453,7 @@ def close_room(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
     logger.info(f"[RoomService] Room '{room_id}' closed by creator '{creator_id}'.")
     return room
 
