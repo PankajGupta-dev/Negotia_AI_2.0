@@ -953,6 +953,34 @@ export async function runSandboxSimulation(params: SandboxSimulateParams): Promi
   });
 }
 
+export interface SandboxCommitRequest {
+  matter_id?: string;
+  liability_cap: number;
+  payment_terms: number;
+  audit_days: number;
+  ip_carveout: string;
+  posture: string;
+  fairness_index?: number;
+  leverage_score?: number;
+  counterparty_acceptance_pct?: number;
+  equilibrium_label?: string;
+  recommendation?: string;
+}
+
+export interface SandboxCommitResponse {
+  status: string;
+  matter_id: string;
+  message: string;
+  deliberations_emitted: number;
+}
+
+export async function commitSandboxConfig(payload: SandboxCommitRequest): Promise<SandboxCommitResponse> {
+  return request<SandboxCommitResponse>('/api/sandbox/commit', {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  });
+}
+
 // Default export consolidating all endpoints
 const api = {
   ingestContracts,
@@ -978,6 +1006,7 @@ const api = {
   getRoomMessages,
   getRoomWebSocketUrl,
   runSandboxSimulation,
+  commitSandboxConfig,
 };
 
 export default api;

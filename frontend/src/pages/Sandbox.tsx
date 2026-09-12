@@ -1,9 +1,10 @@
-﻿import React, { useState, useEffect, useCallback, useRef } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FairnessGauge } from '../components/FairnessGauge';
 import { Button } from '../components/Button';
 import { RiskChip } from '../components/RiskChip';
-import { runSandboxSimulation, SandboxSimulateResult } from '../services/api';
+import { runSandboxSimulation, commitSandboxConfig, SandboxSimulateResult } from '../services/api';
+import { useIntake } from '../context/IntakeContext';
 
 const Shimmer: React.FC<{ className?: string }> = ({ className = '' }) => (
   <span className={`inline-block rounded animate-pulse bg-surface-container-highest ${className}`} aria-hidden="true" />
@@ -23,6 +24,51 @@ const DEFAULT_RESULT: SandboxSimulateResult = {
 
 export const Sandbox: React.FC = () => {
   const navigate = useNavigate();
+  const { matterId } = useIntake();
+
+  const activePrivateRoomId =
+    localStorage.getItem('negotia_creator_room_id') ||
+    localStorage.getItem('negotia_participant_room_id');
+  const targetNegotiationId = activePrivateRoomId || matterId || '2025-INT-809';
+
+  const [isCommitting, setIsCommitting] = useState(false);
+
+  const handleCommit = async () => {
+    setIsCommitting(true);
+    try {
+      await commitSandboxConfig({
+        matter_id: targetNegotiationId,
+        liability_cap: liabilityCap,
+        payment_terms: paymentTerms,
+        audit_days: auditDays,
+        ip_carveout: ipCarveout,
+        posture,
+        fairness_index: result.fairness_index,
+        leverage_score: result.leverage_score,
+        counterparty_acceptance_pct: result.counterparty_acceptance_pct,
+        equilibrium_label: result.equilibrium_label,
+        recommendation: result.recommendation,
+      });
+    } catch (err) {
+      console.warn('Backend sandbox commit endpoint warning:', err);
+    } finally {
+      const commitData = {
+        timestamp: new Date().toISOString(),
+        matterId: targetNegotiationId,
+        liabilityCap,
+        paymentTerms,
+        auditDays,
+        ipCarveout,
+        posture,
+        result,
+      };
+      localStorage.setItem(`negotia_sandbox_commit_${targetNegotiationId}`, JSON.stringify(commitData));
+      localStorage.setItem('negotia_last_sandbox_commit', JSON.stringify(commitData));
+
+      setIsCommitting(false);
+      navigate(`/negotiations/${targetNegotiationId}`);
+    }
+  };
 
   const [posture, setPosture] = useState<'aggressive' | 'balanced' | 'defensive'>('balanced');
   const [liabilityCap, setLiabilityCap] = useState(2.0);
@@ -151,8 +197,8 @@ export const Sandbox: React.FC = () => {
           <Button variant="secondary" size="md" icon="replay" onClick={handleRunMonteCarlo} disabled={isSimulating || isLoading}>
             {isSimulating ? 'Simulating 5,000 Iterations...' : 'Run Monte Carlo Test'}
           </Button>
-          <Button variant="primary" size="md" icon="publish" onClick={() => { alert('Staged sandbox configuration committed to live Negotiation Room.'); navigate('/negotiations'); }}>
-            Commit to Live Room
+          <Button variant="primary" size="md" icon="publish" onClick={handleCommit} disabled={isCommitting || isLoading}>
+            {isCommitting ? 'Committing & Re-Analyzing...' : 'Commit to Live Room'}
           </Button>
         </div>
       </div>

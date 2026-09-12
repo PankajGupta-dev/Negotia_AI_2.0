@@ -29,6 +29,7 @@ export const App: React.FC = () => {
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/intake" element={<Intake />} />
               <Route path="/pipeline/:id" element={<AgentPipeline />} />
+              <Route path="/negotiations" element={<Navigate to="/negotiations/2025-INT-809" replace />} />
               <Route path="/negotiations/:id" element={<NegotiationWorkspace />} />
               <Route path="/private-room" element={<PrivateRoom />} />
               <Route path="/private-room/:roomId" element={<PrivateRoom />} />
