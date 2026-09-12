@@ -498,16 +498,16 @@ export const NegotiationWorkspace: React.FC = () => {
             {activeTab === 'redline' && (
               <div className="space-y-space-md">
                 {/* Uploaded File Pair Source Badge */}
-                {(docAFile || docBFile) && (
+                {(docAFile || docBFile || matterDetail?.docAFile || matterDetail?.docBFile) && (
                   <div className="p-2 bg-[#EDE7DC] border border-[#D6CEBE] rounded flex items-center justify-between font-mono text-[11px] text-[#1C1917]">
                     <span className="flex items-center gap-1.5 font-bold">
                       <span className="material-symbols-outlined text-sm text-[#D97706]">description</span>
-                      Baseline: <span className="text-[#166534] font-semibold">{docAFile || 'Apex_Enterprise_MSA_2025.docx'}</span>
+                      Baseline: <span className="text-[#166534] font-semibold">{matterDetail?.docAFile || matterDetail?.party_a_file || docAFile || 'buyer3.pdf'}</span>
                     </span>
                     <span className="text-[#78716C]">⇄</span>
                     <span className="flex items-center gap-1.5 font-bold">
                       <span className="material-symbols-outlined text-sm text-[#991B1B]">difference</span>
-                      Counterparty: <span className="text-[#991B1B] font-semibold">{docBFile || 'Apex_Dynamics_Inbound_Redline.docx'}</span>
+                      Counterparty: <span className="text-[#991B1B] font-semibold">{matterDetail?.docBFile || matterDetail?.party_b_file || docBFile || 'seller3.pdf'}</span>
                     </span>
                   </div>
                 )}
@@ -517,7 +517,7 @@ export const NegotiationWorkspace: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] font-semibold flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs">description</span>
-                      Original Baseline Agreement ({docAFile || 'Apex_Enterprise_Master_Services_Agreement_2025.docx'}):
+                      Original Baseline Agreement ({matterDetail?.docAFile || matterDetail?.party_a_file || docAFile || 'buyer3.pdf'}):
                     </span>
                   </div>
                   <p className="font-contract-clause text-base text-[#1C1917]/80 bg-[#EDE7DC]/40 p-space-sm rounded border border-[#D6CEBE] leading-relaxed">
@@ -768,9 +768,31 @@ export const NegotiationWorkspace: React.FC = () => {
                   const isA3 = agentKey === 'a3';
                   const isOrchestrator = agentKey === 'orchestrator' || evt.role === 'review_boundary';
 
-                  const formattedTime = evt.timestamp
-                    ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                    : '';
+                  const formattedTime = (() => {
+                    if (!evt.timestamp) return '';
+                    try {
+                      let tsStr = String(evt.timestamp);
+                      if (
+                        tsStr.includes('T') &&
+                        !tsStr.endsWith('Z') &&
+                        !tsStr.includes('+') &&
+                        !tsStr.slice(10).includes('-')
+                      ) {
+                        tsStr += 'Z';
+                      }
+                      const d = new Date(tsStr);
+                      if (isNaN(d.getTime())) return String(evt.timestamp);
+                      return d.toLocaleTimeString('en-IN', {
+                        timeZone: 'Asia/Kolkata',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true,
+                      }) + ' IST';
+                    } catch {
+                      return String(evt.timestamp);
+                    }
+                  })();
 
                   return (
                     <article

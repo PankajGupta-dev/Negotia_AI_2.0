@@ -148,6 +148,15 @@ def _compute_word_diff(original: str, counterparty: str) -> ClauseDiff:
 
 def _format_matter(m: MatterDB) -> Dict[str, Any]:
     """Format matter DB model into canonical JSON matching frontend Matter interface."""
+    doc_a = None
+    doc_b = None
+    if hasattr(m, "documents") and m.documents:
+        for d in m.documents:
+            if d.party == "party_a":
+                doc_a = d.filename
+            elif d.party == "party_b":
+                doc_b = d.filename
+
     return {
         "id": m.id,
         "matterId": m.id,
@@ -176,6 +185,10 @@ def _format_matter(m: MatterDB) -> Dict[str, Any]:
         "lead_counsel": m.lead_counsel,
         "pendingRedlinesCount": m.pending_redlines_count,
         "pending_redlines_count": m.pending_redlines_count,
+        "docAFile": doc_a,
+        "docBFile": doc_b,
+        "party_a_file": doc_a,
+        "party_b_file": doc_b,
         "lastUpdated": m.updated_at.isoformat() if m.updated_at else "",
         "createdAt": m.created_at.isoformat() if m.created_at else "",
         "created_at": m.created_at.isoformat() if m.created_at else "",

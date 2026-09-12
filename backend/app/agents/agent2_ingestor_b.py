@@ -254,8 +254,9 @@ class Agent2LexIngestorB(BaseAgent):
         matter_id: Optional[str] = None,
         **kwargs: Any,
     ) -> LexIngestorBOutput:
+        filename = kwargs.get("filename") or "Party B Markup"
         self.emit_event(
-            thought="Ingesting Party B redline markup for comparative risk analysis...",
+            thought=f"Ingesting {filename} (Party B Markup)...",
             matter_id=matter_id,
         )
 

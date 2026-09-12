@@ -194,7 +194,8 @@ class EventManager:
         """
         import uuid
         resolved_event_id = event_id or f"delib_{matter_id}_{uuid.uuid4().hex[:8]}"
-        ts = datetime.utcnow()
+        from datetime import datetime, timezone
+        ts = datetime.now(timezone.utc)
         payload = {
             "eventId": resolved_event_id,
             "event_id": resolved_event_id,

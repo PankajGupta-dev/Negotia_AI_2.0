@@ -1,7 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
-import { Button } from '../components/Button';
 import { useAuth, UserRole } from '../context/AuthContext';
 import { useIntake } from '../context/IntakeContext';
 
@@ -20,7 +19,7 @@ export const SidebarLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, role, switchRole, logout, isAuthenticated } = useAuth();
-  const { matterId, matterTitle, counterparty, isUploaded } = useIntake();
+  const { matterId } = useIntake();
 
   const activeMatterId = matterId || '2025-INT-809';
 
@@ -357,69 +356,7 @@ export const SidebarLayout: React.FC = () => {
 
       {/* Main Content Area */}
       <div className="flex-1 lg:pl-80 flex flex-col min-h-screen min-w-0">
-        {/* Sticky Top Context Header */}
-        <header className="sticky top-0 z-30 w-full min-h-[4rem] bg-surface-container-lowest/90 backdrop-blur-md border-b border-outline-variant/30 flex flex-wrap items-center justify-between px-space-base md:px-space-lg py-2 gap-space-sm shadow-sm">
-          {/* Left: Mobile Toggle & Matter Context */}
-          <div className="flex items-center gap-space-md min-w-0">
-            <button
-              type="button"
-              className="lg:hidden p-2 text-outline hover:text-on-surface"
-              onClick={() => setMobileOpen(true)}
-              aria-label="Open Navigation Menu"
-            >
-              <span className="material-symbols-outlined text-body-lg">menu</span>
-            </button>
 
-            <div className="flex flex-col min-w-0">
-              <div className="flex items-center gap-space-xs flex-wrap">
-                <span className="font-headline-md text-base md:text-lg text-on-surface font-semibold truncate">
-                  Matter #{activeMatterId}
-                </span>
-                <span className="font-label-sm text-outline">|</span>
-                <span className="font-body-md text-xs md:text-sm text-on-surface-variant truncate">
-                  {matterTitle || 'Enterprise Cloud & Licensing Agreement'}
-                </span>
-              </div>
-              <div className="flex items-center gap-2 pt-0.5 text-label-sm">
-                <span className="text-outline uppercase tracking-wider text-[10px]">
-                  Counterparty: {counterparty || 'Apex Dynamics Corp.'}
-                </span>
-                <span className="text-outline text-[10px]">•</span>
-                <span className="text-primary uppercase tracking-wider font-semibold text-[10px]">
-                  {isUploaded ? 'Ingestion Active · Concession Engine Ready' : 'Round 3 of 4 · Counterparty Redline Received'}
-                </span>
-              </div>
-            </div>
-          </div>
-
-          {/* Right: Global Actions */}
-          <div className="flex items-center gap-2 shrink-0 flex-wrap">
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="difference"
-              onClick={() => navigate(`/negotiations/${activeMatterId}`)}
-            >
-              Compare Diff
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              icon="download"
-              onClick={() => navigate(`/reports/${activeMatterId}`)}
-            >
-              Export Clean Copy
-            </Button>
-            <Button
-              variant="primary"
-              size="sm"
-              icon="draw"
-              onClick={() => navigate(`/negotiations/${activeMatterId}`)}
-            >
-              Draft Compromise
-            </Button>
-          </div>
-        </header>
 
         {/* Page Content Outlet */}
         <main className="flex-1 w-full bg-background min-w-0">

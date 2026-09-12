@@ -156,6 +156,10 @@ export interface MatterDetail {
   varianceCeiling?: number;
   leadCounsel: string;
   pendingRedlinesCount: number;
+  docAFile?: string;
+  docBFile?: string;
+  party_a_file?: string;
+  party_b_file?: string;
   lastUpdated?: string;
   createdAt?: string;
   updatedAt?: string;

@@ -41,29 +41,20 @@ This Agreement shall be governed by Delaware law and adjudicated exclusively in 
 
 export const Intake: React.FC = () => {
   const navigate = useNavigate();
-  const { user, role, isUnifiedDemo } = useAuth();
+  const { role, isUnifiedDemo } = useAuth();
   const {
     fileA,
     fileB,
     docAFile,
     docBFile,
     matterId,
-    matterTitle,
     contractValue,
-    counterparty,
-    jurisdiction,
     varianceSlider,
-    selectedPreset,
     setFileA,
     setFileB,
     setDocAFile,
     setDocBFile,
-    setMatterTitle,
-    setContractValue,
-    setCounterparty,
-    setJurisdiction,
     setVarianceSlider,
-    setSelectedPreset,
     setIsUploaded,
     resetIntake,
   } = useIntake();
@@ -149,9 +140,7 @@ export const Intake: React.FC = () => {
       const varianceVal = varianceSlider > 1 ? varianceSlider / 100 : varianceSlider;
       formData.append('variance_ceiling', varianceVal.toString());
 
-      // Optional metadata fields
-      if (matterTitle) formData.append('title', matterTitle);
-      if (counterparty) formData.append('counterparty', counterparty);
+
 
       setProcessProgress(45);
 
@@ -197,99 +186,21 @@ export const Intake: React.FC = () => {
     <div className="w-full bg-[#F5F1E8] text-[#1C1917] p-space-base md:p-space-lg lg:p-space-xl min-h-screen selection:bg-primary-container selection:text-on-primary-container">
       {/* Background Parchment Grid */}
       <div className="max-w-7xl mx-auto space-y-space-lg">
-        {/* 1. HEADER & DOCKET BANNER */}
-        <header className="bg-[#FAF7F2] border border-[#D6CEBE] p-space-lg rounded shadow-sm">
-          {/* Top Docket Ribbon */}
-          <div className="flex flex-wrap items-center justify-between gap-space-sm pb-space-sm mb-space-md border-b border-[#1C1917]/15">
-            <div className="flex items-center gap-space-md flex-wrap">
-              <span className="font-mono text-[11px] text-[#1C1917] bg-[#EDE7DC] px-2.5 py-1 rounded font-bold uppercase tracking-widest border border-[#D6CEBE]">
-                MATTER INTAKE DOSSIER · DOCKET #{matterId}
-              </span>
-              <span className="font-mono text-[11px] text-[#1C1917]/70 flex items-center gap-1">
-                <span className="material-symbols-outlined text-[15px] text-[#D97706]">
-                  account_balance
-                </span>
-                JURISDICTION: DELAWARE CHANCERY / SEC REG EDGAR COMPLIANT
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 bg-[#DCFCE7] text-[#166534] border border-[#86EFAC] rounded font-mono text-[11px] uppercase tracking-wider font-semibold">
-                <span className="w-2 h-2 rounded-full bg-[#166534] animate-pulse" />
-                READY FOR DUAL-PARTY INGESTION
-              </span>
-            </div>
-          </div>
-
-          {/* Title & Presets */}
-          {/* Role-based Access Banner */}
-          {user && (
-            <div className={`flex items-center gap-3 px-4 py-2.5 rounded border mb-4 ${
-              role === 'unified_demo' || isUnifiedDemo
-                ? 'bg-[#FEF3C7] border-[#D97706]/50 text-[#92400E]'
-                : role === 'buyer'
-                ? 'bg-primary-container/10 border-primary/30 text-primary'
-                : 'bg-secondary-container/10 border-secondary/30 text-secondary'
-            }`}>
-              <span className="material-symbols-outlined text-[20px] shrink-0">
-                {role === 'unified_demo' || isUnifiedDemo ? 'balance' : role === 'buyer' ? 'business_center' : 'handshake'}
-              </span>
-              <div className="text-xs font-mono">
-                <span className="font-bold uppercase tracking-widest">
-                  {role === 'unified_demo' || isUnifiedDemo
-                    ? 'Unified Counsel (Party A + Party B Simultaneous Access)'
-                    : role === 'buyer'
-                    ? 'Buyer (Party A)'
-                    : 'Seller (Party B)'}
-                </span>
-                {' · '}
-                <span className="text-[#78716C]">
-                  {role === 'unified_demo' || isUnifiedDemo
-                    ? 'Bilateral Demonstration Workspace active. You have unrestricted access to upload both Firm Baseline (Doc A) and Counterparty Markup (Doc B).'
-                    : role === 'buyer'
-                    ? 'You may upload the Firm Baseline Agreement (Document A). Counterparty redline is locked to Seller role.'
-                    : 'You may upload the Counterparty Markup (Document B). Firm Baseline is locked to Buyer role.'}
-                </span>
-              </div>
-            </div>
-          )}
-          <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
-            <div className="space-y-1 max-w-3xl">
-              <div className="flex items-center gap-3">
-                <h1 className="font-headline-xl text-3xl md:text-4xl text-[#1C1917] tracking-tight font-semibold">
-                  Contract Intake & Bilateral Ingestion
-                </h1>
-                <WaxSealLogo size={32} />
-              </div>
-              <p className="font-contract-clause text-[#1C1917]/80 text-base leading-relaxed">
-                Upload your firm’s primary baseline agreement (<strong>Contract A</strong>) alongside
-                the inbound counterparty markup or historical benchmark (<strong>Contract B</strong>)
-                to trigger autonomous redline extraction and concession equilibrium synthesis.
-              </p>
-            </div>
-
-            {/* Presets */}
-            <div className="flex flex-wrap items-center gap-1 bg-[#EDE7DC] p-1 rounded border border-[#D6CEBE]">
-              {(
-                [
-                  { id: 'msa', label: 'Standard MSA' },
-                  { id: 'dpa', label: 'Data Protection (DPA)' },
-                  { id: 'ip', label: 'IP License' },
-                  { id: 'custom', label: 'Custom Bilateral' },
-                ] as const
-              ).map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  onClick={() => setSelectedPreset(preset.id)}
-                  className={`px-3 py-1.5 font-mono text-[11px] uppercase tracking-wider transition-all rounded ${
-                    selectedPreset === preset.id
-                      ? 'bg-[#FAF7F2] text-[#1C1917] font-bold shadow-sm'
-                      : 'text-[#1C1917]/70 hover:text-[#1C1917]'
-                  }`}
-                >
-                  {preset.label}
-                </button>
-              ))}
+        {/* 1. HEADER — PDF Title Display */}
+        <header className="bg-[#FAF7F2] border border-[#D6CEBE] p-space-md rounded shadow-sm">
+          <div className="flex items-center gap-3">
+            <WaxSealLogo size={28} />
+            <div className="min-w-0">
+              <h1 className="font-headline-xl text-2xl md:text-3xl text-[#1C1917] tracking-tight font-semibold truncate">
+                {docAFile
+                  ? docAFile.replace(/\.[^/.]+$/, '')
+                  : 'Contract Intake & Bilateral Ingestion'}
+              </h1>
+              {docAFile && (
+                <p className="font-mono text-xs text-[#78716C] mt-0.5">
+                  {docBFile ? `Party A: ${docAFile} · Party B: ${docBFile}` : `Party A: ${docAFile}`}
+                </p>
+              )}
             </div>
           </div>
         </header>
@@ -359,31 +270,7 @@ export const Intake: React.FC = () => {
               )}
             </div>
 
-            {/* Document A Metadata Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-md pt-space-xs font-body-sm text-xs">
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] block mb-1">
-                  Matter Title
-                </label>
-                <input
-                  type="text"
-                  value={matterTitle}
-                  onChange={(e) => setMatterTitle(e.target.value)}
-                  className="w-full bg-[#FFFFFF] border border-[#D6CEBE] rounded px-3 py-1.5 text-[#1C1917] focus:outline-none focus:border-[#D97706]"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] block mb-1">
-                  Contract ARR / Total Value
-                </label>
-                <input
-                  type="text"
-                  value={contractValue}
-                  onChange={(e) => setContractValue(e.target.value)}
-                  className="w-full bg-[#FFFFFF] border border-[#D6CEBE] rounded px-3 py-1.5 text-[#1C1917] focus:outline-none focus:border-[#D97706]"
-                />
-              </div>
-            </div>
+
           </div>
 
           {/* DOCUMENT B (Counterparty Inbound) */}
@@ -447,31 +334,7 @@ export const Intake: React.FC = () => {
               </div>
             </div>
 
-            {/* Document B Metadata Fields */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-space-md pt-space-xs font-body-sm text-xs">
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] block mb-1">
-                  Counterparty Legal Entity
-                </label>
-                <input
-                  type="text"
-                  value={counterparty}
-                  onChange={(e) => setCounterparty(e.target.value)}
-                  className="w-full bg-[#FFFFFF] border border-[#D6CEBE] rounded px-3 py-1.5 text-[#1C1917] focus:outline-none focus:border-[#D97706]"
-                />
-              </div>
-              <div>
-                <label className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] block mb-1">
-                  Governing Forum / Jurisdiction
-                </label>
-                <input
-                  type="text"
-                  value={jurisdiction}
-                  onChange={(e) => setJurisdiction(e.target.value)}
-                  className="w-full bg-[#FFFFFF] border border-[#D6CEBE] rounded px-3 py-1.5 text-[#1C1917] focus:outline-none focus:border-[#D97706]"
-                />
-              </div>
-            </div>
+
           </div>
         </div>
 

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
+import { useIntake } from '../context/IntakeContext';
 import {
   BACKEND_BASE_URL,
   getMatterCheckpoint,
@@ -20,6 +21,41 @@ interface AgentConfig {
   lines: string[];
 }
 
+function getAgentInitialLines(docA?: string | null, docB?: string | null): string[][] {
+  const nameA = docA || 'buyer3.pdf';
+  const nameB = docB || 'seller3.pdf';
+  return [
+    [
+      `Ingesting ${nameA} (Party A Baseline)...`,
+      'AST parse complete — 42 contract nodes decomposed',
+      'Extracted core positions: §11.2 Liability, §14.1 IP, §8.3 Payment, §16.4 Venue',
+      'Flagged §11.2 — Baseline calls for strict 1x ARR mutual liability cap',
+      'Party A legal parameters mapped. Handing off to Agent 2 ✓',
+    ],
+    [
+      `Ingesting ${nameB} (Party B Markup)...`,
+      'AST diff complete — detected aggressive counterparty revisions across 6 clauses',
+      'BREACH ALERT §11.2: Counterparty inserted unlimited indirect indemnification',
+      'COMMERCIAL CONFLICT §8.3: Counterparty demands Net 30 vs firm Net 60 policy',
+      'Party B conflict vector quantified. Submitting to AI Judge (Agent 3) ✓',
+    ],
+    [
+      'Cross-referencing 48,000+ SEC EDGAR Fortune 500 exhibits (CrowdStrike, Snowflake)...',
+      '⚖️ LEGAL VERDICT: 2.0x ARR super-cap aligns with 88% market precedents (§11.2)',
+      '📈 MARKETING VERDICT: Conceding Net 45 preserves $4.2M ARR strategic account value',
+      'Solving Nash Equilibrium — Pareto optimal consensus achieved at 94% fairness index',
+      'VERDICT RATIFIED: Concede Net 45 terms in exchange for 2.0x ARR super-cap ✓',
+    ],
+    [
+      'Synthesizing bilateral consensus brief from Agent 3 verdict...',
+      'Conformed legal language drafted for all 6 contested clauses',
+      'Calculated impact: $28,500 outside counsel savings | 18-minute cycle turnaround',
+      'SHA-256 Merkle root digest sealed: 0x8f22e8d9a4b19c... (Delaware Chancery standard)',
+      '⚠️ PENDING HUMAN REVIEW — Waiting for General Counsel final approval',
+    ],
+  ];
+}
+
 const AGENTS: AgentConfig[] = [
   {
     id: 'a1',
@@ -30,13 +66,7 @@ const AGENTS: AgentConfig[] = [
     replacesBadge: 'Replaces: $350/hr Associate Legal Review',
     icon: 'document_scanner',
     colorTone: 'amber',
-    lines: [
-      'Ingesting Apex_Enterprise_MSA_2025.docx (Party A Baseline)...',
-      'AST parse complete — 42 contract nodes decomposed',
-      'Extracted core positions: §11.2 Liability, §14.1 IP, §8.3 Payment, §16.4 Venue',
-      'Flagged §11.2 — Baseline calls for strict 1x ARR mutual liability cap',
-      'Party A legal parameters mapped. Handing off to Agent 2 ✓',
-    ],
+    lines: [],
   },
   {
     id: 'a2',
@@ -47,13 +77,7 @@ const AGENTS: AgentConfig[] = [
     replacesBadge: 'Replaces: 5-Day Outside Counsel Markup Turn',
     icon: 'edit_document',
     colorTone: 'blue',
-    lines: [
-      'Ingesting Apex_Dynamics_Inbound_Redline_Round3.docx (Party B Markup)...',
-      'AST diff complete — detected aggressive counterparty revisions across 6 clauses',
-      'BREACH ALERT §11.2: Counterparty inserted unlimited indirect indemnification',
-      'COMMERCIAL CONFLICT §8.3: Counterparty demands Net 30 vs firm Net 60 policy',
-      'Party B conflict vector quantified. Submitting to AI Judge (Agent 3) ✓',
-    ],
+    lines: [],
   },
   {
     id: 'a3',
@@ -107,6 +131,7 @@ export const AgentPipeline: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
 
+  const { docAFile, docBFile } = useIntake();
   const [statuses, setStatuses] = useState<AgentStatus[]>(['idle', 'idle', 'idle', 'idle']);
   const [streamLines, setStreamLines] = useState<string[][]>([[], [], [], []]);
   const [pipelineComplete, setPipelineComplete] = useState(false);
@@ -156,6 +181,8 @@ export const AgentPipeline: React.FC = () => {
 
     loadCheckpoint();
 
+    const initialAgentLines = getAgentInitialLines(docAFile, docBFile);
+
     // Helper: Simulated fallback if backend stream is not reachable or empty
     const runLocalFallback = () => {
       const runAgent = (agentIdx: number) => {
@@ -170,8 +197,8 @@ export const AgentPipeline: React.FC = () => {
           return next;
         });
 
-        const currentAgent = AGENTS[agentIdx];
-        currentAgent.lines.forEach((line, lIdx) => {
+        const currentLines = initialAgentLines[agentIdx] || [];
+        currentLines.forEach((line, lIdx) => {
           const t = setTimeout(() => {
             setStreamLines((prev) => {
               const next = [...prev];
@@ -179,7 +206,7 @@ export const AgentPipeline: React.FC = () => {
               return next;
             });
 
-            if (lIdx === currentAgent.lines.length - 1) {
+            if (lIdx === currentLines.length - 1) {
               const finishT = setTimeout(() => {
                 setStatuses((prev) => {
                   const next = [...prev];
@@ -206,13 +233,15 @@ export const AgentPipeline: React.FC = () => {
       .then((res) => (res.ok ? res.json() : null))
       .then((matter) => {
         if (matter) {
+          const nameA = matter.docAFile || matter.party_a_file || docAFile;
+          const nameB = matter.docBFile || matter.party_b_file || docBFile;
           const mStatus = (matter.status || '').toLowerCase();
           if (['pending_review', 'approved', 'sealed', 'concluded'].includes(mStatus)) {
             setPipelineComplete(true);
             setStatuses(['complete', 'complete', 'complete', 'complete']);
             setStreamLines((prev) => {
               if (prev.every((arr) => arr.length === 0)) {
-                return AGENTS.map((a) => a.lines);
+                return getAgentInitialLines(nameA, nameB);
               }
               return prev;
             });

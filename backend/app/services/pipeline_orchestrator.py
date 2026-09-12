@@ -367,6 +367,12 @@ class PipelineOrchestrator:
             # ─────────────────────────────────────────────────────────────────
             # STAGE 2: Extract Party A Document
             # ─────────────────────────────────────────────────────────────────
+            docs_a = session.query(ContractDocumentDB).filter(
+                ContractDocumentDB.matter_id == matter_id,
+                ContractDocumentDB.party == DocumentParty.PARTY_A.value,
+            ).all()
+            party_a_filename = docs_a[0].filename if (docs_a and docs_a[0].filename) else "Party A Baseline"
+
             self._persist_stage(session, matter, stage=PipelineStage.EXTRACTING_PARTY_A)
             self.emit_event(
                 db=session,
@@ -374,7 +380,7 @@ class PipelineOrchestrator:
                 event_type=PipelineEventType.AGENT_UPDATE,
                 agent="a1",
                 status=AgentStatus.RUNNING.value,
-                thought="Forensic extraction of Party A baseline agreement underway...",
+                thought=f"Ingesting {party_a_filename} (Party A Baseline)...",
             )
 
             party_a_text, party_a_clauses = await self._extract_party_document(
@@ -386,12 +392,18 @@ class PipelineOrchestrator:
                 matter_id=matter_id,
                 event_type=PipelineEventType.AGENT_UPDATE,
                 agent="a1",
-                thought=f"Party A baseline extracted: {len(party_a_clauses)} structural clause AST nodes identified.",
+                thought=f"Party A baseline extracted ({party_a_filename}): {len(party_a_clauses)} structural clause AST nodes identified.",
             )
 
             # ─────────────────────────────────────────────────────────────────
             # STAGE 3: Extract Party B Document
             # ─────────────────────────────────────────────────────────────────
+            docs_b = session.query(ContractDocumentDB).filter(
+                ContractDocumentDB.matter_id == matter_id,
+                ContractDocumentDB.party == DocumentParty.PARTY_B.value,
+            ).all()
+            party_b_filename = docs_b[0].filename if (docs_b and docs_b[0].filename) else "Party B Markup"
+
             self._persist_stage(session, matter, stage=PipelineStage.EXTRACTING_PARTY_B)
             self.emit_event(
                 db=session,
@@ -399,7 +411,7 @@ class PipelineOrchestrator:
                 event_type=PipelineEventType.AGENT_UPDATE,
                 agent="a2",
                 status=AgentStatus.RUNNING.value,
-                thought="Forensic extraction of Party B counterparty markup underway...",
+                thought=f"Ingesting {party_b_filename} (Party B Markup)...",
             )
 
             party_b_text, party_b_clauses = await self._extract_party_document(
@@ -411,7 +423,7 @@ class PipelineOrchestrator:
                 matter_id=matter_id,
                 event_type=PipelineEventType.AGENT_UPDATE,
                 agent="a2",
-                thought=f"Party B redlines extracted: {len(party_b_clauses)} marked-up clause sections identified.",
+                thought=f"Party B redlines extracted ({party_b_filename}): {len(party_b_clauses)} marked-up clause sections identified.",
             )
 
             # Check if resuming from downstream agent
@@ -429,7 +441,7 @@ class PipelineOrchestrator:
                     db=session,
                     matter_id=matter_id,
                     event_type=PipelineEventType.AGENT_UPDATE,
-                    thought="Dispatching Agent 1 (Lex-Ingestor A) and Agent 2 (Lex-Ingestor B) concurrently...",
+                    thought=f"Dispatching Agent 1 (Lex-Ingestor A on {party_a_filename}) and Agent 2 (Lex-Ingestor B on {party_b_filename}) concurrently...",
                 )
 
                 a1_output, a2_output = await self._run_agents_1_and_2_concurrently(
@@ -439,6 +451,8 @@ class PipelineOrchestrator:
                     party_a_clauses=party_a_clauses,
                     party_b_text=party_b_text,
                     party_b_clauses=party_b_clauses,
+                    party_a_filename=party_a_filename,
+                    party_b_filename=party_b_filename,
                 )
             else:
                 if should_run_a1:
@@ -793,6 +807,8 @@ class PipelineOrchestrator:
         party_a_clauses: List[Dict[str, Any]],
         party_b_text: str,
         party_b_clauses: List[Dict[str, Any]],
+        party_a_filename: str = "Party A Baseline",
+        party_b_filename: str = "Party B Markup",
     ) -> Tuple[LexIngestorAOutput, LexIngestorBOutput]:
         """
         Execute Agent 1 and Agent 2 independently and concurrently in worker threads.
@@ -811,11 +827,16 @@ class PipelineOrchestrator:
                         thought=ev.thought,
                     )
                 )
-                store_agent_status(s1, matter_id, "a1", AgentStatus.RUNNING, "Starting Lex-Ingestor A...")
-                out = agent1.run(contract_text=party_a_text, clauses=party_a_clauses, matter_id=matter_id)
+                store_agent_status(s1, matter_id, "a1", AgentStatus.RUNNING, f"Starting Lex-Ingestor A on {party_a_filename}...")
+                out = agent1.run(
+                    contract_text=party_a_text,
+                    clauses=party_a_clauses,
+                    matter_id=matter_id,
+                    filename=party_a_filename,
+                )
                 store_agent_status(
                     s1, matter_id, "a1", AgentStatus.COMPLETE,
-                    f"Agent 1 complete: {len(out.classified_clauses)} clauses classified.",
+                    f"Agent 1 complete ({party_a_filename}): {len(out.classified_clauses)} clauses classified.",
                     result=out.model_dump(mode="json"),
                 )
                 return out
@@ -839,16 +860,17 @@ class PipelineOrchestrator:
                         thought=ev.thought,
                     )
                 )
-                store_agent_status(s2, matter_id, "a2", AgentStatus.RUNNING, "Starting Lex-Ingestor B...")
+                store_agent_status(s2, matter_id, "a2", AgentStatus.RUNNING, f"Starting Lex-Ingestor B on {party_b_filename}...")
                 out = agent2.run(
                     party_a_clauses=party_a_clauses,
                     party_b_clauses=party_b_clauses,
                     diffs=diffs,
                     matter_id=matter_id,
+                    filename=party_b_filename,
                 )
                 store_agent_status(
                     s2, matter_id, "a2", AgentStatus.COMPLETE,
-                    f"Agent 2 complete: overall risk score {out.overall_risk_score:.1f}/10.",
+                    f"Agent 2 complete ({party_b_filename}): overall risk score {out.overall_risk_score:.1f}/10.",
                     result=out.model_dump(mode="json"),
                 )
                 return out

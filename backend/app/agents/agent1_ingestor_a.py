@@ -58,8 +58,9 @@ class Agent1LexIngestorA(BaseAgent):
         matter_id: Optional[str] = None,
         **kwargs: Any,
     ) -> LexIngestorAOutput:
+        filename = kwargs.get("filename") or (Path(file_path).name if file_path else "Party A Baseline")
         self.emit_event(
-            thought="Ingesting Party A baseline contract document...",
+            thought=f"Ingesting {filename} (Party A Baseline)...",
             matter_id=matter_id,
         )
 
