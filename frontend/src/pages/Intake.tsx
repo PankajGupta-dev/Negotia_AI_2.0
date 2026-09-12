@@ -4,6 +4,7 @@ import { WaxSealLogo } from '../components/WaxSealLogo';
 import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import { BACKEND_BASE_URL } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const DEFAULT_BASELINE_TEXT = `MASTER SERVICES AGREEMENT
 § 1. Definitions & Scope of Operations
@@ -39,8 +40,15 @@ This Agreement shall be governed by Delaware law and adjudicated exclusively in 
 
 export const Intake: React.FC = () => {
   const navigate = useNavigate();
+  const { user, role } = useAuth();
   const fileInputARef = useRef<HTMLInputElement>(null);
   const fileInputBRef = useRef<HTMLInputElement>(null);
+
+  // Role-based upload permissions
+  // Buyer (Party A) → uploads baseline only
+  // Seller (Party B) → uploads counterparty redline only
+  const canUploadBaseline = role === 'buyer';
+  const canUploadRedline = role === 'seller';
 
   const [selectedPreset, setSelectedPreset] = useState<'msa' | 'dpa' | 'ip' | 'custom'>('msa');
   const [fileA, setFileA] = useState<File | null>(null);
@@ -198,6 +206,29 @@ export const Intake: React.FC = () => {
           </div>
 
           {/* Title & Presets */}
+          {/* Role-based Access Banner */}
+          {user && (
+            <div className={`flex items-center gap-3 px-4 py-2.5 rounded border mb-4 ${
+              role === 'buyer'
+                ? 'bg-primary-container/10 border-primary/30 text-primary'
+                : 'bg-secondary-container/10 border-secondary/30 text-secondary'
+            }`}>
+              <span className="material-symbols-outlined text-[20px] shrink-0">
+                {role === 'buyer' ? 'business_center' : 'handshake'}
+              </span>
+              <div className="text-xs font-mono">
+                <span className="font-bold uppercase tracking-widest">
+                  {role === 'buyer' ? 'Buyer (Party A)' : 'Seller (Party B)'}
+                </span>
+                {' · '}
+                <span className="text-[#78716C]">
+                  {role === 'buyer'
+                    ? 'You may upload the Firm Baseline Agreement (Document A). Counterparty redline is locked to Seller role.'
+                    : 'You may upload the Counterparty Markup (Document B). Firm Baseline is locked to Buyer role.'}
+                </span>
+              </div>
+            </div>
+          )}
           <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-space-md">
             <div className="space-y-1 max-w-3xl">
               <div className="flex items-center gap-3">
@@ -267,16 +298,25 @@ export const Intake: React.FC = () => {
               className="hidden"
             />
 
-            {/* Drop zone */}
+            {/* Drop zone A */}
             <div
-              onClick={() => fileInputARef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDropA}
-              className="border-2 border-dashed border-[#D6CEBE] hover:border-[#D97706] rounded p-space-lg bg-[#EDE7DC]/40 text-center transition-colors cursor-pointer space-y-2"
+              onClick={() => canUploadBaseline && fileInputARef.current?.click()}
+              onDragOver={(e) => { if (canUploadBaseline) e.preventDefault(); }}
+              onDrop={(e) => { if (canUploadBaseline) handleDropA(e); }}
+              title={!canUploadBaseline ? 'Only Buyer (Party A) can upload the baseline agreement' : undefined}
+              className={`border-2 border-dashed rounded p-space-lg text-center transition-colors space-y-2 ${
+                canUploadBaseline
+                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/40 cursor-pointer'
+                  : 'border-[#D6CEBE]/40 bg-[#EDE7DC]/20 cursor-not-allowed opacity-60'
+              }`}
             >
-              <span className="material-symbols-outlined text-4xl text-[#D97706]">
-                description
-              </span>
+              {!canUploadBaseline && (
+                <div className="flex items-center justify-center gap-2 text-[#991B1B] font-mono text-[11px] uppercase font-bold tracking-wider pb-1">
+                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                  Restricted to Buyer Role
+                </div>
+              )}
+              <span className="material-symbols-outlined text-4xl text-[#D97706]">description</span>
               <div className="font-headline-md text-base font-semibold text-[#1C1917]">
                 {docAFile || 'Drag & Drop Baseline Agreement (.DOCX, .PDF, .TXT)'}
               </div>
@@ -287,11 +327,13 @@ export const Intake: React.FC = () => {
                   ? 'Standard Baseline · 42 Clauses · Cryptographically Ready'
                   : 'Supports tracked changes & comments'}
               </p>
-              <div className="pt-2">
-                <span className="px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors">
-                  {docAFile ? 'Replace File' : 'Browse File'}
-                </span>
-              </div>
+              {canUploadBaseline && (
+                <div className="pt-2">
+                  <span className="px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors">
+                    {docAFile ? 'Replace File' : 'Browse File'}
+                  </span>
+                </div>
+              )}
             </div>
 
             {/* Document A Metadata Fields */}
@@ -346,16 +388,25 @@ export const Intake: React.FC = () => {
               className="hidden"
             />
 
-            {/* Drop zone */}
+            {/* Drop zone B */}
             <div
-              onClick={() => fileInputBRef.current?.click()}
-              onDragOver={(e) => e.preventDefault()}
-              onDrop={handleDropB}
-              className="border-2 border-dashed border-[#D6CEBE] hover:border-[#D97706] rounded p-space-lg bg-[#EDE7DC]/40 text-center transition-colors cursor-pointer space-y-2"
+              onClick={() => canUploadRedline && fileInputBRef.current?.click()}
+              onDragOver={(e) => { if (canUploadRedline) e.preventDefault(); }}
+              onDrop={(e) => { if (canUploadRedline) handleDropB(e); }}
+              title={!canUploadRedline ? 'Only Seller (Party B) can upload the counterparty redline' : undefined}
+              className={`border-2 border-dashed rounded p-space-lg text-center transition-colors space-y-2 ${
+                canUploadRedline
+                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/40 cursor-pointer'
+                  : 'border-[#D6CEBE]/40 bg-[#EDE7DC]/20 cursor-not-allowed opacity-60'
+              }`}
             >
-              <span className="material-symbols-outlined text-4xl text-[#991B1B]">
-                difference
-              </span>
+              {!canUploadRedline && (
+                <div className="flex items-center justify-center gap-2 text-[#991B1B] font-mono text-[11px] uppercase font-bold tracking-wider pb-1">
+                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                  Restricted to Seller Role
+                </div>
+              )}
+              <span className="material-symbols-outlined text-4xl text-[#991B1B]">difference</span>
               <div className="font-headline-md text-base font-semibold text-[#1C1917]">
                 {docBFile || 'Drag & Drop Counterparty Markup (.DOCX, .PDF, .TXT)'}
               </div>

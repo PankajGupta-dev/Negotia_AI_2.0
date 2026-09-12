@@ -24,10 +24,14 @@ import json
 import logging
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
+from sqlalchemy.orm import Session
 
+from app.db.database import get_db
 from app.services.event_manager import MatterEvent, event_manager
+from app.services.negotiation_controller import NegotiationController
+from app.services.pipeline_orchestrator import PipelineOrchestrator
 
 logger = logging.getLogger(__name__)
 
@@ -199,3 +203,60 @@ async def stream_pipeline_events(
         media_type="text/event-stream",
         headers=headers,
     )
+
+
+@router.get("/checkpoint/{matter_id}", summary="Get latest negotiation checkpoint")
+def get_matter_checkpoint(
+    matter_id: str,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """Retrieve the latest compact negotiation checkpoint for a matter."""
+    checkpoint = NegotiationController.load_latest_checkpoint(db, matter_id)
+    if not checkpoint:
+        return {
+            "status": "NONE",
+            "matter_id": matter_id,
+            "round_number": 0,
+            "agreed_clauses": [],
+            "unresolved_clauses": [],
+            "concessions_made": [],
+            "buyer_offer": {},
+            "seller_offer": {},
+            "termination_reason": None,
+        }
+    return checkpoint.model_dump(mode="json")
+
+
+@router.post("/resume/{matter_id}", summary="Resume negotiation from latest checkpoint")
+async def resume_matter_negotiation(
+    matter_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+) -> Dict[str, Any]:
+    """
+    Resume negotiation for a deadlocked matter from the last checkpoint.
+    Does NOT restart from Round 1.
+    """
+    checkpoint = NegotiationController.load_latest_checkpoint(db, matter_id)
+    if not checkpoint:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"No negotiation checkpoint found for matter '{matter_id}' to resume.",
+        )
+
+    next_round = checkpoint.round_number + 1
+
+    async def _run_resume_worker():
+        orchestrator = PipelineOrchestrator()
+        await orchestrator.run_pipeline(matter_id=matter_id, resume_from_checkpoint=True)
+
+    background_tasks.add_task(_run_resume_worker)
+
+    return {
+        "success": True,
+        "matter_id": matter_id,
+        "resumed_from_round": checkpoint.round_number,
+        "next_round": next_round,
+        "message": f"Negotiation resumed from checkpoint. Continuing at Round {next_round}.",
+    }
+

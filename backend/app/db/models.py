@@ -55,6 +55,9 @@ class MatterDB(Base):
     audit_records: Mapped[List["AuditRecordDB"]] = relationship(
         "AuditRecordDB", back_populates="matter", cascade="all, delete-orphan"
     )
+    checkpoints: Mapped[List["NegotiationCheckpointDB"]] = relationship(
+        "NegotiationCheckpointDB", back_populates="matter", cascade="all, delete-orphan"
+    )
 
 
 class ContractDocumentDB(Base):
@@ -186,3 +189,27 @@ class AuditRecordDB(Base):
 
     # Relationship
     matter: Mapped["MatterDB"] = relationship("MatterDB", back_populates="audit_records")
+
+
+class NegotiationCheckpointDB(Base):
+    __tablename__ = "negotiation_checkpoints"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    matter_id: Mapped[str] = mapped_column(String, ForeignKey("matters.id"), index=True)
+    round_number: Mapped[int] = mapped_column(Integer, index=True)
+    buyer_offer: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    seller_offer: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    agreed_clauses: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
+    unresolved_clauses: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
+    concessions_made: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
+    buyer_non_negotiables: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
+    seller_non_negotiables: Mapped[Optional[dict]] = mapped_column(JSON, default=list)
+    status: Mapped[str] = mapped_column(String, default="NEGOTIATING")
+    termination_reason: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    token_usage_estimate: Mapped[int] = mapped_column(Integer, default=0)
+    elapsed_seconds: Mapped[float] = mapped_column(Float, default=0.0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    # Relationship
+    matter: Mapped["MatterDB"] = relationship("MatterDB", back_populates="checkpoints")
+

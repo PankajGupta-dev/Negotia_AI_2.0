@@ -83,6 +83,12 @@ from app.services.state_service import (
     store_agent_status,
     store_pipeline_event,
 )
+from app.services.negotiation_controller import (
+    NegotiationController,
+    NegotiationStatus,
+    NegotiationCheckpoint,
+)
+from app.models.checkpoint import TerminationReason
 
 logger = logging.getLogger(__name__)
 
@@ -305,6 +311,7 @@ class PipelineOrchestrator:
         matter_id: str,
         db: Optional[Session] = None,
         resume_from_agent: Optional[str] = None,
+        resume_from_checkpoint: bool = False,
     ) -> PipelineResult:
         """
         Execute full 9-stage pipeline asynchronously:
@@ -445,15 +452,58 @@ class PipelineOrchestrator:
                     a2_output = self._load_agent_output(session, matter_id, "a2")
 
             # ─────────────────────────────────────────────────────────────────
-            # STAGE 6: Compare / Merge Clauses (Reconciliation + Negotiation Engine)
+            # STAGE 6: Multi-Round Negotiation & Termination Controller
             # ─────────────────────────────────────────────────────────────────
             self._persist_stage(session, matter, stage=PipelineStage.MERGING_CLAUSES)
             self.emit_event(
                 db=session,
                 matter_id=matter_id,
                 event_type=PipelineEventType.MERGE_STATUS,
-                message="Merging AST Clause Trees and scoring bilateral compromise candidates...",
+                message="Initializing multi-round Negotiation Controller with strict termination rules...",
+                thought="Multi-round negotiation chamber open. Monitoring termination bounds (max 6 rounds, 90s, stalemate guard).",
             )
+
+            controller = NegotiationController(matter_id=matter_id, start_time=start_time)
+            last_checkpoint = controller.load_latest_checkpoint(session, matter_id)
+
+            start_round = (last_checkpoint.round_number + 1) if (last_checkpoint and resume_from_checkpoint) else 1
+            max_rounds_to_run = min(6, start_round + 3) if resume_from_checkpoint else 6
+            current_checkpoint = last_checkpoint if (last_checkpoint and resume_from_checkpoint) else None
+
+            # Base clauses from AST extraction
+            base_clauses_for_controller = party_a_clauses if party_a_clauses else []
+            buyer_non_negotiables = a1_output.non_negotiables if (a1_output and a1_output.non_negotiables) else ["liability", "governing_law"]
+            seller_non_negotiables = ["payment", "indemnification"]
+
+            for round_num in range(start_round, max_rounds_to_run + 1):
+                current_checkpoint = controller.step_round(
+                    current_round=round_num,
+                    previous_checkpoint=current_checkpoint,
+                    base_clauses=base_clauses_for_controller,
+                    buyer_non_negotiables=buyer_non_negotiables,
+                    seller_non_negotiables=seller_non_negotiables,
+                )
+                controller.save_checkpoint(session, current_checkpoint)
+
+                self.emit_event(
+                    db=session,
+                    matter_id=matter_id,
+                    event_type=PipelineEventType.MERGE_STATUS,
+                    status=current_checkpoint.status,
+                    message=(
+                        f"Round {round_num}/6 [{current_checkpoint.status}]: "
+                        f"{len(current_checkpoint.agreed_clauses)} agreed, "
+                        f"{len(current_checkpoint.unresolved_clauses)} unresolved."
+                    ),
+                    thought=(
+                        f"Round {round_num} complete. Negotiation Status: {current_checkpoint.status}. "
+                        f"Compact context tokens: {current_checkpoint.token_usage_estimate}. "
+                        f"Elapsed: {current_checkpoint.elapsed_seconds}s."
+                    ),
+                )
+
+                if current_checkpoint.status in (NegotiationStatus.AGREE.value, NegotiationStatus.DISAGREE.value):
+                    break
 
             neg_output, settled_clause_models = await self._compare_and_merge_clauses(
                 session=session,
@@ -462,14 +512,56 @@ class PipelineOrchestrator:
                 a2_output=a2_output,
                 party_a_clauses=party_a_clauses,
                 party_b_clauses=party_b_clauses,
+                checkpoint=current_checkpoint,
             )
+
+            # If DISAGREE: Terminate safely without proceeding to agreement report generation
+            if current_checkpoint and current_checkpoint.status == NegotiationStatus.DISAGREE.value:
+                matter.stage = "Negotiation Deadlock — Awaiting GC Direction"
+                matter.status = "disagree"
+                session.commit()
+
+                self.emit_event(
+                    db=session,
+                    matter_id=matter_id,
+                    event_type=PipelineEventType.AGENT_UPDATE,
+                    status="DISAGREE",
+                    message=f"Negotiation terminated: {current_checkpoint.termination_reason}",
+                    thought=f"Terminated safely: {current_checkpoint.termination_reason}",
+                )
+                self.emit_event(
+                    db=session,
+                    matter_id=matter_id,
+                    event_type=PipelineEventType.PIPELINE_COMPLETE,
+                    status="DISAGREE",
+                    message=f"Negotiation halted: DISAGREE ({current_checkpoint.termination_reason})",
+                    thought="Negotiation ended in deadlock. Review unresolved clauses or click Resume.",
+                )
+
+                duration = round(time.time() - start_time, 2)
+                return PipelineResult(
+                    matter_id=matter_id,
+                    docket_number=matter.docket_number,
+                    status="disagree",
+                    stage=matter.stage,
+                    success=True,
+                    report_id=None,
+                    clauses_count=len(settled_clause_models),
+                    duration_seconds=duration,
+                    agent1_output=a1_output.model_dump(mode="json") if a1_output else None,
+                    agent2_output=a2_output.model_dump(mode="json") if a2_output else None,
+                    negotiation_output=neg_output.model_dump(mode="json") if neg_output else None,
+                    agent3_output=None,
+                    agent4_output=None,
+                )
 
             self.emit_event(
                 db=session,
                 matter_id=matter_id,
                 event_type=PipelineEventType.MERGE_STATUS,
+                status="AGREE",
                 message=(
-                    f"Clause reconciliation complete. {len(neg_output.clause_results)} clauses scored; "
+                    f"Bilateral consensus ratified. {len(neg_output.clause_results)} clauses scored; "
                     f"Nash Equilibrium Index: {neg_output.aggregate_compromise_score:.1f}%."
                 ),
             )
@@ -865,6 +957,7 @@ class PipelineOrchestrator:
         a2_output: LexIngestorBOutput,
         party_a_clauses: List[Dict[str, Any]],
         party_b_clauses: List[Dict[str, Any]],
+        checkpoint: Optional[NegotiationCheckpoint] = None,
     ) -> Tuple[NegotiationEngineOutput, List[ContractClause]]:
         """
         Compare AST trees between Party A baseline and Party B redlines,
@@ -942,6 +1035,24 @@ class PipelineOrchestrator:
             elif risk_val >= 3.5:
                 risk_lvl = ClauseRiskLevel.MODERATE
 
+            clause_status = ClauseStatus.AGREED.value
+            rationale_text = rec.rationale if rec else "Nash compromise candidate conformed."
+
+            if checkpoint:
+                agreed_item = next((a for a in checkpoint.agreed_clauses if a.get("clause_id") == c_id), None)
+                unresolved_item = next((u for u in checkpoint.unresolved_clauses if u.get("clause_id") == c_id), None)
+                if agreed_item:
+                    conformed_text = agreed_item.get("agreed_text", conformed_text)
+                    clause_status = ClauseStatus.AGREED.value
+                    rationale_text = agreed_item.get("rationale", "Bilateral consensus conformed.")
+                    risk_val = min(risk_val, 3.0)
+                    risk_lvl = ClauseRiskLevel.LOW
+                elif unresolved_item:
+                    clause_status = ClauseStatus.FLAGGED.value
+                    rationale_text = unresolved_item.get("gap_summary", "Unresolved bilateral position.")
+                    risk_val = max(risk_val, 7.0)
+                    risk_lvl = ClauseRiskLevel.HIGH
+
             db_clause_id = f"{matter.id}_{c_id}" if not c_id.startswith(f"{matter.id}_") else c_id
             db_clause = session.query(ContractClauseDB).filter(
                 ContractClauseDB.matter_id == matter.id,
@@ -960,8 +1071,8 @@ class PipelineOrchestrator:
                     risk_level=risk_lvl.value,
                     risk_score=round(risk_val, 1),
                     precedent_alignment=round(rec.compromise_score if rec else 90.0, 1),
-                    status=ClauseStatus.AGREED.value,
-                    rationale=rec.rationale if rec else "Nash compromise candidate conformed.",
+                    status=clause_status,
+                    rationale=rationale_text,
                 )
                 session.add(db_clause)
             else:
@@ -969,7 +1080,8 @@ class PipelineOrchestrator:
                 db_clause.risk_score = round(risk_val, 1)
                 db_clause.risk_level = risk_lvl.value
                 db_clause.precedent_alignment = round(rec.compromise_score if rec else 90.0, 1)
-                db_clause.status = ClauseStatus.AGREED.value
+                db_clause.status = clause_status
+                db_clause.rationale = rationale_text
 
             settled_clauses.append(
                 ContractClause(
@@ -983,7 +1095,7 @@ class PipelineOrchestrator:
                     risk_level=risk_lvl,
                     risk_score=db_clause.risk_score,
                     precedent_alignment=db_clause.precedent_alignment,
-                    status=ClauseStatus.AGREED,
+                    status=ClauseStatus(clause_status) if clause_status in [s.value for s in ClauseStatus] else ClauseStatus.AGREED,
                     rationale=db_clause.rationale,
                 )
             )

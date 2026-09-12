@@ -1,7 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { Button } from '../components/Button';
+import { useAuth, UserRole } from '../context/AuthContext';
 
 interface NavItem {
   name: string;
@@ -30,20 +31,51 @@ const NAV_ITEMS: NavItem[] = [
   },
   { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
   { name: 'Executive Report', path: '/reports/2025-INT-809', icon: 'description' },
-  { name: 'Deal Analytics', path: '/analytics', icon: 'analytics' },
-  { name: 'Team Governance', path: '/team', icon: 'group' },
-  { name: 'AI Configuration', path: '/settings', icon: 'tune' },
-  { name: 'Audit & Provenance', path: '/governance', icon: 'verified' },
+  { name: 'Audit and Governance', path: '/governance', icon: 'verified_user' },
 ];
 
 export const SidebarLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const profileRef = useRef<HTMLDivElement>(null);
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, role, switchRole, logout, isAuthenticated } = useAuth();
+
+  // Close profile popover on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (profileRef.current && !profileRef.current.contains(e.target as Node)) {
+        setProfileOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const handleSwitchRole = (newRole: UserRole) => {
+    switchRole(newRole);
+    setProfileOpen(false);
+  };
+
+  const handleSignOut = () => {
+    logout();
+    setProfileOpen(false);
+    navigate('/login');
+  };
 
   // Highlight or title check
   const isWorkspace = location.pathname.startsWith('/negotiations');
   const isReport = location.pathname.startsWith('/reports');
+  const isGovernance = location.pathname.startsWith('/governance') || location.pathname.startsWith('/team');
+
+  // Current user display data
+  const displayName = user?.name ?? 'Guest User';
+  const displayInitials = user?.initials ?? 'GU';
+  const displayTitle = user?.title ?? 'Legal Counsel';
+  const displayEmail = user?.email ?? '';
+  const displayCompany = user?.company ?? 'Enterprise';
+  const activeRole = user?.role ?? role;
 
   return (
     <div className="min-h-screen bg-background text-on-surface flex">
@@ -107,7 +139,8 @@ export const SidebarLayout: React.FC = () => {
               const isActive =
                 location.pathname === item.path ||
                 (item.path.startsWith('/negotiations') && isWorkspace) ||
-                (item.path.startsWith('/reports') && isReport);
+                (item.path.startsWith('/reports') && isReport) ||
+                (item.path.startsWith('/governance') && isGovernance);
 
               return (
                 <NavLink
@@ -152,15 +185,13 @@ export const SidebarLayout: React.FC = () => {
           </nav>
         </div>
 
-        {/* Sidebar Footer: Agent Counsel Box & Profile Switcher */}
+        {/* Sidebar Footer: Agent Counsel Box & Dynamic Profile Block */}
         <div className="p-space-base border-t border-outline-variant/30 space-y-space-md bg-surface-container-lowest">
           {/* Active Agent Counsel Badge */}
           <div className="p-space-sm bg-surface-container-low rounded border border-outline-variant/30 space-y-1">
             <div className="flex items-center gap-2">
               <div className="w-5 h-5 rounded-full bg-primary-container flex items-center justify-center shrink-0">
-                <span className="material-symbols-outlined text-[13px] text-on-primary-container">
-                  auto_awesome
-                </span>
+                <span className="material-symbols-outlined text-[13px] text-on-primary-container">auto_awesome</span>
               </div>
               <span className="font-label-sm text-[10px] text-primary tracking-wider uppercase font-semibold">
                 Agent Counsel: Active
@@ -171,24 +202,137 @@ export const SidebarLayout: React.FC = () => {
             </p>
           </div>
 
-          {/* General Counsel Profile Block */}
-          <div className="flex items-center justify-between pt-1">
-            <div className="flex items-center gap-space-sm min-w-0">
-              <div className="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/60 flex items-center justify-center font-serif text-primary font-bold text-sm shrink-0">
-                ER
+          {/* Dynamic User Profile Block */}
+          <div className="relative" ref={profileRef}>
+            <button
+              type="button"
+              id="sidebar-profile-btn"
+              onClick={() => setProfileOpen((prev) => !prev)}
+              className="w-full flex items-center justify-between pt-1 hover:bg-surface-container-high/40 rounded px-1 py-1 transition-colors group"
+            >
+              <div className="flex items-center gap-space-sm min-w-0">
+                {/* Avatar */}
+                {user?.avatar ? (
+                  <img
+                    src={user.avatar}
+                    alt={displayName}
+                    className="w-8 h-8 rounded-full border border-outline-variant/60 object-cover shrink-0"
+                  />
+                ) : (
+                  <div className="w-8 h-8 rounded-full bg-surface-container-high border border-outline-variant/60 flex items-center justify-center font-serif text-primary font-bold text-sm shrink-0">
+                    {displayInitials}
+                  </div>
+                )}
+                {/* Info */}
+                <div className="min-w-0 flex flex-col">
+                  <span className="font-label-lg text-xs text-on-surface truncate font-semibold">{displayName}</span>
+                  <span className="font-label-sm text-[10px] text-outline truncate">{displayTitle}</span>
+                </div>
               </div>
-              <div className="min-w-0 flex flex-col">
-                <span className="font-label-lg text-xs text-on-surface truncate font-semibold">
-                  Elena Rostova
+              {/* Role badge + chevron */}
+              <div className="flex items-center gap-1 shrink-0">
+                <span
+                  className={`font-label-sm text-[9px] px-1.5 py-0.5 rounded border uppercase tracking-wider font-mono font-semibold ${
+                    activeRole === 'buyer'
+                      ? 'text-primary bg-primary-container/20 border-primary/30'
+                      : 'text-secondary bg-secondary-container/20 border-secondary/30'
+                  }`}
+                >
+                  {activeRole === 'buyer' ? 'Buyer' : 'Seller'}
                 </span>
-                <span className="font-label-sm text-[10px] text-outline truncate">
-                  General Counsel
+                <span className={`material-symbols-outlined text-outline text-[14px] transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`}>
+                  expand_less
                 </span>
               </div>
-            </div>
-            <span className="font-label-sm text-[9px] text-secondary bg-secondary-container/20 px-1.5 py-0.5 rounded border border-secondary/30 uppercase tracking-wider font-mono font-semibold shrink-0">
-              Enterprise
-            </span>
+            </button>
+
+            {/* Profile Popover (slides up from below) */}
+            {profileOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-2 bg-surface-container border border-outline-variant/50 rounded-xl shadow-[0_-8px_30px_rgba(0,0,0,0.5)] overflow-hidden z-50">
+                {/* Profile Header */}
+                <div className="px-4 pt-4 pb-3 border-b border-outline-variant/20 space-y-2">
+                  <div className="flex items-center gap-3">
+                    {user?.avatar ? (
+                      <img src={user.avatar} alt={displayName}
+                        className="w-10 h-10 rounded-full border border-outline-variant/60 object-cover shrink-0" />
+                    ) : (
+                      <div className="w-10 h-10 rounded-full bg-surface-container-high border border-outline-variant/60 flex items-center justify-center font-serif text-primary font-bold text-sm shrink-0">
+                        {displayInitials}
+                      </div>
+                    )}
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-on-surface truncate">{displayName}</div>
+                      <div className="text-[11px] text-outline font-mono truncate">{displayEmail || displayCompany}</div>
+                    </div>
+                  </div>
+                  {isAuthenticated && (
+                    <div className="flex items-center gap-1.5 text-[10px] font-mono text-secondary">
+                      <span className="material-symbols-outlined text-[12px]">verified</span>
+                      <span>Google Auth Verified · {user?.provider === 'google' ? 'OAuth 2.0' : 'Enterprise SSO'}</span>
+                    </div>
+                  )}
+                  <div className="text-[10px] font-mono text-outline">
+                    {user?.authorityLevel ?? 'Level 2 ($2M ARR Threshold)'}
+                  </div>
+                </div>
+
+                {/* Role Switcher */}
+                <div className="px-3 py-2.5 border-b border-outline-variant/20">
+                  <p className="font-mono text-[9px] uppercase text-outline tracking-widest mb-2">Switch Negotiation Role</p>
+                  <div className="grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      id="switch-buyer-btn"
+                      onClick={() => handleSwitchRole('buyer')}
+                      className={`flex flex-col items-center gap-0.5 py-2 px-2 rounded-lg border transition-all duration-150 ${
+                        activeRole === 'buyer'
+                          ? 'border-primary/60 bg-primary-container/15 text-primary'
+                          : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/40 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">business_center</span>
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider">Buyer</span>
+                      <span className="text-[8px] text-outline">Party A</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="switch-seller-btn"
+                      onClick={() => handleSwitchRole('seller')}
+                      className={`flex flex-col items-center gap-0.5 py-2 px-2 rounded-lg border transition-all duration-150 ${
+                        activeRole === 'seller'
+                          ? 'border-secondary/60 bg-secondary-container/15 text-secondary'
+                          : 'border-outline-variant/30 bg-surface-container-lowest hover:border-secondary/40 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[18px]">handshake</span>
+                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider">Seller</span>
+                      <span className="text-[8px] text-outline">Party B</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Actions */}
+                <div className="px-3 py-2 space-y-0.5">
+                  <button
+                    type="button"
+                    onClick={() => { navigate('/governance?tab=team'); setProfileOpen(false); }}
+                    className="w-full flex items-center gap-2 px-2 py-2 rounded text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high transition-colors text-xs font-medium"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">manage_accounts</span>
+                    Manage Team
+                  </button>
+                  <button
+                    type="button"
+                    id="sign-out-btn"
+                    onClick={handleSignOut}
+                    className="w-full flex items-center gap-2 px-2 py-2 rounded text-error/80 hover:text-error hover:bg-error-container/15 transition-colors text-xs font-medium"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">logout</span>
+                    Sign Out
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </aside>

@@ -1,7 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
-import { BACKEND_BASE_URL } from '../services/api';
+import {
+  BACKEND_BASE_URL,
+  getMatterCheckpoint,
+  resumeNegotiation,
+  NegotiationCheckpointData,
+} from '../services/api';
 
 interface AgentConfig {
   id: string;
@@ -108,10 +113,48 @@ export const AgentPipeline: React.FC = () => {
   const [pipelineError, setPipelineError] = useState<string | null>(null);
   const [showExplainer, setShowExplainer] = useState(false);
 
+  const [checkpoint, setCheckpoint] = useState<NegotiationCheckpointData | null>(null);
+  const [isResuming, setIsResuming] = useState(false);
+  const [resumeMessage, setResumeMessage] = useState<string | null>(null);
+
+  const targetId = id || '2025-INT-809';
+
+  const loadCheckpoint = async () => {
+    try {
+      const data = await getMatterCheckpoint(targetId);
+      if (data && data.status && data.status !== 'NONE') {
+        setCheckpoint(data);
+        if (data.status === 'AGREE') {
+          setPipelineComplete(true);
+        }
+      }
+    } catch {
+      // ignore
+    }
+  };
+
+  const handleResume = async () => {
+    setIsResuming(true);
+    setResumeMessage(null);
+    try {
+      const res = await resumeNegotiation(targetId);
+      setResumeMessage(res.message);
+      setPipelineComplete(false);
+      setPipelineError(null);
+      setTimeout(loadCheckpoint, 700);
+    } catch (err: any) {
+      setPipelineError(err.message || 'Failed to resume negotiation');
+    } finally {
+      setIsResuming(false);
+      setTimeout(() => setResumeMessage(null), 4000);
+    }
+  };
+
   useEffect(() => {
-    const targetId = id || '2025-INT-809';
     let eventSource: EventSource | null = null;
     let fallbackTimeouts: NodeJS.Timeout[] = [];
+
+    loadCheckpoint();
 
     // Helper: Simulated fallback if backend stream is not reachable or empty
     const runLocalFallback = () => {
@@ -286,6 +329,18 @@ export const AgentPipeline: React.FC = () => {
       };
 
       // Specific event listeners
+      eventSource.addEventListener('negotiation_checkpoint', (e: MessageEvent) => {
+        try {
+          const cp = JSON.parse(e.data);
+          if (cp) {
+            setCheckpoint(cp);
+            if (cp.status === 'AGREE') {
+              setPipelineComplete(true);
+            }
+          }
+        } catch {}
+      });
+
       eventSource.addEventListener('agent_update', (e: MessageEvent) => {
         try {
           processEvent(JSON.parse(e.data), 'agent_update');
@@ -295,27 +350,35 @@ export const AgentPipeline: React.FC = () => {
       eventSource.addEventListener('merge_status', (e: MessageEvent) => {
         try {
           processEvent(JSON.parse(e.data), 'merge_status');
+          loadCheckpoint();
         } catch {}
       });
 
       eventSource.addEventListener('pipeline_complete', (e: MessageEvent) => {
         try {
           processEvent(e.data ? JSON.parse(e.data) : {}, 'pipeline_complete');
+          loadCheckpoint();
         } catch {
           processEvent({}, 'pipeline_complete');
+          loadCheckpoint();
         }
       });
 
       eventSource.addEventListener('pipeline_error', (e: MessageEvent) => {
         try {
           processEvent(JSON.parse(e.data), 'pipeline_error');
+          loadCheckpoint();
         } catch {}
       });
 
       // Catch-all onmessage
       eventSource.onmessage = (e: MessageEvent) => {
         try {
-          processEvent(JSON.parse(e.data));
+          const payload = JSON.parse(e.data);
+          if (payload?.event === 'negotiation_checkpoint' || payload?.status === 'AGREE' || payload?.status === 'DISAGREE') {
+            loadCheckpoint();
+          }
+          processEvent(payload);
         } catch {}
       };
 
@@ -323,6 +386,7 @@ export const AgentPipeline: React.FC = () => {
         if (eventSource) {
           eventSource.close();
         }
+        loadCheckpoint();
         // If no stream data has arrived, trigger local fallback for resilience
         setStreamLines((prev) => {
           if (prev.every((lines) => lines.length === 0)) {
@@ -405,6 +469,170 @@ export const AgentPipeline: React.FC = () => {
             >
               Dismiss
             </button>
+          </div>
+        )}
+
+        {/* Negotiation Status Banner (NEGOTIATING -> AGREE / DISAGREE) */}
+        {checkpoint && checkpoint.status && checkpoint.status !== 'NONE' && (
+          <div
+            className={`w-full rounded-lg border p-space-md transition-all shadow-md animate-fade-in ${
+              checkpoint.status === 'AGREE'
+                ? 'bg-[#F0FDF4] border-[#16A34A]/50 text-[#166534]'
+                : checkpoint.status === 'DISAGREE'
+                ? 'bg-[#FEF2F2] border-[#DC2626]/60 text-[#991B1B]'
+                : 'bg-surface-container-low border-primary/40 text-on-surface'
+            }`}
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <span
+                  className={`px-2.5 py-1 rounded text-xs font-mono font-bold tracking-wider uppercase flex items-center gap-1.5 shadow-sm ${
+                    checkpoint.status === 'AGREE'
+                      ? 'bg-[#16A34A] text-white'
+                      : checkpoint.status === 'DISAGREE'
+                      ? 'bg-[#DC2626] text-white'
+                      : 'bg-primary text-on-primary animate-pulse'
+                  }`}
+                >
+                  <span className="material-symbols-outlined text-sm">
+                    {checkpoint.status === 'AGREE'
+                      ? 'verified'
+                      : checkpoint.status === 'DISAGREE'
+                      ? 'cancel'
+                      : 'sync'}
+                  </span>
+                  {checkpoint.status === 'AGREE'
+                    ? 'AGREE'
+                    : checkpoint.status === 'DISAGREE'
+                    ? 'DISAGREE'
+                    : `NEGOTIATING (Round ${checkpoint.round_number || 1}/6)`}
+                </span>
+
+                <span className="text-xs font-mono text-on-surface-variant">
+                  Round: <strong className="text-on-surface">{checkpoint.round_number || 1}</strong>/6 | Elapsed: <strong className="text-on-surface">{(checkpoint.elapsed_seconds || 0).toFixed(1)}s</strong> | Context: <strong className="text-on-surface">~{checkpoint.token_usage_estimate || 0} tokens</strong>
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/30">
+                  Agreed Clauses: <strong className="text-[#16A34A]">{checkpoint.agreed_clauses?.length || 0}</strong>
+                </span>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/30">
+                  Unresolved: <strong className="text-[#DC2626]">{checkpoint.unresolved_clauses?.length || 0}</strong>
+                </span>
+              </div>
+            </div>
+
+            {checkpoint.termination_reason && (
+              <div className="mt-2 pt-2 border-t border-current/20 flex items-center justify-between text-xs font-mono">
+                <div className="flex items-center gap-1.5">
+                  <span className="material-symbols-outlined text-sm">info</span>
+                  <span>Termination Reason: <strong>{checkpoint.termination_reason}</strong></span>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* DISAGREE Deadlock Resolution Panel */}
+        {checkpoint && checkpoint.status === 'DISAGREE' && (
+          <div className="w-full bg-surface-container-lowest border-2 border-[#DC2626]/70 rounded-xl p-space-lg shadow-xl space-y-4 animate-fade-in">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/30 pb-3">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-[#FEE2E2] text-[#DC2626] flex items-center justify-center">
+                  <span className="material-symbols-outlined text-2xl">gavel</span>
+                </div>
+                <div>
+                  <h3 className="font-headline-md text-base font-bold text-on-surface flex items-center gap-2">
+                    Deadlock Enforced — Deliberation Stopped Safely
+                    <span className="text-[11px] px-2 py-0.5 rounded bg-[#FEE2E2] text-[#DC2626] font-mono font-semibold">
+                      DISAGREE
+                    </span>
+                  </h3>
+                  <p className="font-body-sm text-xs text-on-surface-variant">
+                    Reason: <strong>{checkpoint.termination_reason || 'Autonomous round/time limit reached'}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleResume}
+                disabled={isResuming}
+                className="px-4 py-2 bg-primary hover:bg-primary/90 text-on-primary font-mono text-xs font-bold rounded-lg shadow flex items-center gap-2 transition-all disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-base">
+                  {isResuming ? 'hourglass_top' : 'restart_alt'}
+                </span>
+                <span>{isResuming ? 'Resuming Next Round...' : 'Resume Negotiation'}</span>
+              </button>
+            </div>
+
+            {resumeMessage && (
+              <div className="p-2.5 rounded bg-primary/10 border border-primary/30 text-primary text-xs font-mono flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">play_arrow</span>
+                <span>{resumeMessage}</span>
+              </div>
+            )}
+
+            {/* Final Positions & Unresolved Clauses */}
+            <div className="space-y-3">
+              <h4 className="font-mono text-xs text-on-surface-variant uppercase tracking-wider font-bold">
+                Unresolved Clauses & Final Positions (Round {checkpoint.round_number}):
+              </h4>
+
+              {checkpoint.unresolved_clauses && checkpoint.unresolved_clauses.length > 0 ? (
+                <div className="space-y-3">
+                  {checkpoint.unresolved_clauses.map((clause, uIdx) => (
+                    <div
+                      key={clause.clause_id || uIdx}
+                      className="bg-surface-container-low border border-outline-variant/40 rounded-lg p-3 space-y-2 text-xs"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-mono font-bold text-on-surface">
+                          § {clause.section || clause.clause_id} — {clause.title || clause.clause_id}
+                        </span>
+                        <div className="flex items-center gap-2">
+                          {clause.is_buyer_non_negotiable && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary/20 text-primary border border-primary/40 font-semibold">
+                              Buyer Non-Negotiable
+                            </span>
+                          )}
+                          {clause.is_seller_non_negotiable && (
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-[#DC2626]/20 text-[#DC2626] border border-[#DC2626]/40 font-semibold">
+                              Seller Non-Negotiable
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1">
+                        <div className="bg-surface-container-lowest p-2.5 rounded border border-outline-variant/30">
+                          <span className="text-[10px] font-mono text-primary font-bold uppercase block mb-1">
+                            Buyer Final Position
+                          </span>
+                          <p className="font-mono text-[11px] text-on-surface leading-relaxed whitespace-pre-wrap">
+                            {clause.buyer_position || '(No position recorded)'}
+                          </p>
+                        </div>
+                        <div className="bg-surface-container-lowest p-2.5 rounded border border-outline-variant/30">
+                          <span className="text-[10px] font-mono text-secondary font-bold uppercase block mb-1">
+                            Seller Final Position
+                          </span>
+                          <p className="font-mono text-[11px] text-on-surface leading-relaxed whitespace-pre-wrap">
+                            {clause.seller_position || '(No position recorded)'}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="bg-surface-container-low p-3 rounded text-xs font-mono text-on-surface-variant">
+                  No individual unresolved clauses recorded.
+                </div>
+              )}
+            </div>
           </div>
         )}
 

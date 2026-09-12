@@ -203,7 +203,7 @@ export const Dashboard: React.FC = () => {
           </button>
           <button
             type="button"
-            onClick={() => navigate('/team')}
+            onClick={() => navigate('/governance?tab=team')}
             className="px-3 py-1.5 bg-surface-container-high hover:bg-surface-container-highest border border-outline-variant/40 text-on-surface font-mono text-[11px] rounded flex items-center gap-1.5 shrink-0 transition-colors"
           >
             <span className="material-symbols-outlined text-[15px] text-outline">person_add</span>

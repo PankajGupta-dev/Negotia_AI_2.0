@@ -576,6 +576,82 @@ export function subscribeToPipelineStream(
   };
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Negotiation Checkpoints & Termination Controller
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface AgreedClauseItem {
+  clause_id: string;
+  section: string;
+  title: string;
+  agreed_text: string;
+  round_agreed: number;
+  compromise_score?: number;
+  rationale?: string;
+}
+
+export interface UnresolvedClauseItem {
+  clause_id: string;
+  section: string;
+  title: string;
+  buyer_position: string;
+  seller_position: string;
+  gap_summary?: string;
+  is_buyer_non_negotiable?: boolean;
+  is_seller_non_negotiable?: boolean;
+  compromise_score?: number;
+}
+
+export interface NegotiationCheckpointData {
+  matter_id: string;
+  round_number: number;
+  status: 'NEGOTIATING' | 'AGREE' | 'DISAGREE' | 'NONE';
+  termination_reason?: string | null;
+  buyer_offer: Record<string, any>;
+  seller_offer: Record<string, any>;
+  agreed_clauses: AgreedClauseItem[];
+  unresolved_clauses: UnresolvedClauseItem[];
+  concessions_made: Array<{
+    round_number: number;
+    party: string;
+    clause_id: string;
+    section: string;
+    description: string;
+  }>;
+  buyer_non_negotiables: string[];
+  seller_non_negotiables: string[];
+  elapsed_seconds?: number;
+  token_usage_estimate?: number;
+}
+
+/**
+ * Fetch latest compact negotiation checkpoint for a matter.
+ */
+export async function getMatterCheckpoint(matterId: string): Promise<NegotiationCheckpointData> {
+  return request<NegotiationCheckpointData>(`/api/pipeline/checkpoint/${encodeURIComponent(matterId)}`);
+}
+
+/**
+ * Resume negotiation from the last saved checkpoint (does not restart from Round 1).
+ */
+export async function resumeNegotiation(matterId: string): Promise<{
+  success: boolean;
+  matter_id: string;
+  resumed_from_round: number;
+  next_round: number;
+  message: string;
+}> {
+  return request<{
+    success: boolean;
+    matter_id: string;
+    resumed_from_round: number;
+    next_round: number;
+    message: string;
+  }>(`/api/pipeline/resume/${encodeURIComponent(matterId)}`, {
+    method: 'POST',
+  });
+}
+
 // Default export consolidating all endpoints
 const api = {
   ingestContracts,
@@ -589,6 +665,8 @@ const api = {
   getMatterAudit,
   verifyAuditChain,
   subscribeToPipelineStream,
+  getMatterCheckpoint,
+  resumeNegotiation,
 };
 
 export default api;

@@ -51,7 +51,7 @@ export const Landing: React.FC = () => {
           <div className="flex items-center gap-3">
             <button
               type="button"
-              onClick={() => navigate('/dashboard')}
+              onClick={() => navigate('/login')}
               className="hidden sm:inline-flex items-center gap-2 h-9 px-4 rounded-md bg-surface-container-high/60 hover:bg-surface-container-high text-on-surface hover:text-white border border-outline-variant/40 hover:border-primary/40 text-xs font-medium tracking-wide transition-all duration-200 backdrop-blur-sm shadow-sm hover:shadow active:scale-95 group cursor-pointer"
             >
               <span className="material-symbols-outlined text-[16px] text-outline group-hover:text-primary transition-colors">
@@ -139,7 +139,7 @@ export const Landing: React.FC = () => {
                 size="lg"
                 icon="arrow_forward"
                 iconPosition="right"
-                onClick={() => navigate('/dashboard')}
+                onClick={() => navigate('/login')}
                 className="w-full sm:w-auto shadow-2xl"
               >
                 Access Command Dashboard
@@ -427,7 +427,7 @@ export const Landing: React.FC = () => {
                   variant="primary"
                   size="lg"
                   icon="rocket_launch"
-                  onClick={() => navigate('/dashboard')}
+                  onClick={() => navigate('/login')}
                 >
                   Launch Live Platform
                 </Button>
