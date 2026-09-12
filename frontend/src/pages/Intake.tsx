@@ -5,6 +5,7 @@ import { Button } from '../components/Button';
 import { ProgressBar } from '../components/ProgressBar';
 import { BACKEND_BASE_URL } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useIntake } from '../context/IntakeContext';
 
 const DEFAULT_BASELINE_TEXT = `MASTER SERVICES AGREEMENT
 § 1. Definitions & Scope of Operations
@@ -41,27 +42,39 @@ This Agreement shall be governed by Delaware law and adjudicated exclusively in 
 export const Intake: React.FC = () => {
   const navigate = useNavigate();
   const { user, role, isUnifiedDemo } = useAuth();
+  const {
+    fileA,
+    fileB,
+    docAFile,
+    docBFile,
+    matterId,
+    matterTitle,
+    contractValue,
+    counterparty,
+    jurisdiction,
+    varianceSlider,
+    selectedPreset,
+    setFileA,
+    setFileB,
+    setDocAFile,
+    setDocBFile,
+    setMatterTitle,
+    setContractValue,
+    setCounterparty,
+    setJurisdiction,
+    setVarianceSlider,
+    setSelectedPreset,
+    setIsUploaded,
+    resetIntake,
+  } = useIntake();
+
   const fileInputARef = useRef<HTMLInputElement>(null);
   const fileInputBRef = useRef<HTMLInputElement>(null);
 
   // Role-based upload permissions
-  // Buyer (Party A) → uploads baseline only
-  // Seller (Party B) → uploads counterparty redline only
-  // Unified Demo → unrestricted bilateral access (both Party A and Party B)
   const canUploadBaseline = role === 'buyer' || role === 'unified_demo' || isUnifiedDemo;
   const canUploadRedline = role === 'seller' || role === 'unified_demo' || isUnifiedDemo;
 
-  const [selectedPreset, setSelectedPreset] = useState<'msa' | 'dpa' | 'ip' | 'custom'>('msa');
-  const [fileA, setFileA] = useState<File | null>(null);
-  const [fileB, setFileB] = useState<File | null>(null);
-  const [docAFile, setDocAFile] = useState<string | null>('Apex_Enterprise_Master_Services_Agreement_2025.docx');
-  const [docBFile, setDocBFile] = useState<string | null>('Apex_Dynamics_Inbound_Redline_Round3.docx');
-  const [matterId, setMatterId] = useState<string>(() => `2025-INT-${Math.floor(1000 + Math.random() * 9000)}`);
-  const [matterTitle, setMatterTitle] = useState('Enterprise Cloud & Licensing Agreement');
-  const [contractValue, setContractValue] = useState('$4,200,000 ARR');
-  const [counterparty, setCounterparty] = useState('Apex Dynamics Corp.');
-  const [jurisdiction, setJurisdiction] = useState('Delaware Chancery Court');
-  const [varianceSlider, setVarianceSlider] = useState(18.5);
   const [isProcessing, setIsProcessing] = useState(false);
   const [processProgress, setProcessProgress] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -165,6 +178,7 @@ export const Intake: React.FC = () => {
       const targetMatterId = data.matterId || data.matter_id || matterId;
 
       setProcessProgress(100);
+      setIsUploaded(true);
       setTimeout(() => {
         navigate(`/pipeline/${targetMatterId}`);
       }, 350);
@@ -553,12 +567,8 @@ export const Intake: React.FC = () => {
           <button
             type="button"
             onClick={() => {
-              setFileA(null);
-              setFileB(null);
-              setDocAFile(null);
-              setDocBFile(null);
+              resetIntake();
               setErrorMessage(null);
-              setMatterId(`2025-INT-${Math.floor(1000 + Math.random() * 9000)}`);
             }}
             className="text-xs font-mono text-[#78716C] hover:text-[#1C1917] uppercase tracking-wider"
           >

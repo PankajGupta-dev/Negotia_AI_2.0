@@ -3,6 +3,7 @@ import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { Button } from '../components/Button';
 import { useAuth, UserRole } from '../context/AuthContext';
+import { useIntake } from '../context/IntakeContext';
 
 interface NavItem {
   name: string;
@@ -12,28 +13,6 @@ interface NavItem {
   badgeTone?: 'amber' | 'forest' | 'rust';
 }
 
-const NAV_ITEMS: NavItem[] = [
-  { name: 'Operations Command', path: '/dashboard', icon: 'dashboard' },
-  { name: 'Contract Intake', path: '/intake', icon: 'upload_file' },
-  {
-    name: 'Live Agent Pipeline',
-    path: '/pipeline/2025-INT-809',
-    icon: 'account_tree',
-    badge: 'LIVE',
-    badgeTone: 'amber',
-  },
-  {
-    name: 'Negotiation Room',
-    path: '/negotiations/2025-INT-809',
-    icon: 'handshake',
-    badge: '4 pending',
-    badgeTone: 'rust',
-  },
-  { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
-  { name: 'Executive Report', path: '/reports/2025-INT-809', icon: 'description' },
-  { name: 'Audit and Governance', path: '/governance', icon: 'verified_user' },
-];
-
 export const SidebarLayout: React.FC = () => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
@@ -41,6 +20,31 @@ export const SidebarLayout: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, role, switchRole, logout, isAuthenticated } = useAuth();
+  const { matterId, matterTitle, counterparty, isUploaded } = useIntake();
+
+  const activeMatterId = matterId || '2025-INT-809';
+
+  const NAV_ITEMS: NavItem[] = [
+    { name: 'Operations Command', path: '/dashboard', icon: 'dashboard' },
+    { name: 'Contract Intake', path: '/intake', icon: 'upload_file' },
+    {
+      name: 'Live Agent Pipeline',
+      path: `/pipeline/${activeMatterId}`,
+      icon: 'account_tree',
+      badge: 'LIVE',
+      badgeTone: 'amber',
+    },
+    {
+      name: 'Negotiation Room',
+      path: `/negotiations/${activeMatterId}`,
+      icon: 'handshake',
+      badge: '4 pending',
+      badgeTone: 'rust',
+    },
+    { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
+    { name: 'Executive Report', path: `/reports/${activeMatterId}`, icon: 'description' },
+    { name: 'Audit and Governance', path: '/governance', icon: 'verified_user' },
+  ];
 
   // Close profile popover on outside click
   useEffect(() => {
@@ -371,20 +375,20 @@ export const SidebarLayout: React.FC = () => {
             <div className="flex flex-col min-w-0">
               <div className="flex items-center gap-space-xs flex-wrap">
                 <span className="font-headline-md text-base md:text-lg text-on-surface font-semibold truncate">
-                  Matter #2025-INT-809
+                  Matter #{activeMatterId}
                 </span>
                 <span className="font-label-sm text-outline">|</span>
                 <span className="font-body-md text-xs md:text-sm text-on-surface-variant truncate">
-                  Cloud Services & Enterprise License Agreement
+                  {matterTitle || 'Enterprise Cloud & Licensing Agreement'}
                 </span>
               </div>
               <div className="flex items-center gap-2 pt-0.5 text-label-sm">
                 <span className="text-outline uppercase tracking-wider text-[10px]">
-                  Counterparty: Apex Dynamics Corp.
+                  Counterparty: {counterparty || 'Apex Dynamics Corp.'}
                 </span>
                 <span className="text-outline text-[10px]">•</span>
                 <span className="text-primary uppercase tracking-wider font-semibold text-[10px]">
-                  Round 3 of 4 · Counterparty Redline Received
+                  {isUploaded ? 'Ingestion Active · Concession Engine Ready' : 'Round 3 of 4 · Counterparty Redline Received'}
                 </span>
               </div>
             </div>
@@ -396,7 +400,7 @@ export const SidebarLayout: React.FC = () => {
               variant="secondary"
               size="sm"
               icon="difference"
-              onClick={() => navigate('/negotiations/2025-INT-809')}
+              onClick={() => navigate(`/negotiations/${activeMatterId}`)}
             >
               Compare Diff
             </Button>
@@ -404,7 +408,7 @@ export const SidebarLayout: React.FC = () => {
               variant="secondary"
               size="sm"
               icon="download"
-              onClick={() => navigate('/reports/2025-INT-809')}
+              onClick={() => navigate(`/reports/${activeMatterId}`)}
             >
               Export Clean Copy
             </Button>
@@ -412,7 +416,7 @@ export const SidebarLayout: React.FC = () => {
               variant="primary"
               size="sm"
               icon="draw"
-              onClick={() => navigate('/negotiations/2025-INT-809')}
+              onClick={() => navigate(`/negotiations/${activeMatterId}`)}
             >
               Draft Compromise
             </Button>
