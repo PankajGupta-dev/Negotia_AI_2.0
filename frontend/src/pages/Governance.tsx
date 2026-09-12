@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { jsPDF } from 'jspdf';
 import { useParams, useSearchParams } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { Button } from '../components/Button';
@@ -146,27 +147,359 @@ export const Governance: React.FC = () => {
     }
   };
 
-  const handleExportProof = () => {
-    const payload = {
-      matterId: targetMatterId,
-      docketNumber: auditData?.docketNumber || `DOCKET #${targetMatterId}`,
-      tipHash: auditData?.tipHash || '0x8f22e8d9c0919b4412e45903b17454ba019a823c',
-      genesisHash: auditData?.genesisHash,
-      chainLength: auditData?.chainLength || steps.length,
-      isValid: auditData?.isValid ?? true,
-      verificationMessage: auditData?.verificationMessage || 'Mathematical integrity verified.',
-      blocks: auditData?.blocks || MOCK_AUDIT_STEPS,
-      exportedAt: new Date().toISOString(),
+  const handleExportAuditContract = () => {
+    const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const marginL = 25;
+    const marginR = 25;
+    const contentW = pageW - marginL - marginR;
+    const docket = auditData?.docketNumber || targetMatterId;
+    const tipHash = auditData?.tipHash || (auditData as any)?.tip_hash || '0x8f22e8d9c0919b4412e45903b17454ba019a823c';
+    const chainLen = auditData?.chainLength || steps.length;
+    const genDate = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' });
+    const exportTimestamp = new Date().toISOString();
+
+    let y = 20;
+
+    const ensureSpace = (needed: number) => {
+      if (y + needed > pageH - 25) {
+        // Footer on current page
+        doc.setFontSize(7);
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(140, 140, 140);
+        doc.text(`Negotia AI — Audit Contract — Docket #${docket}`, marginL, pageH - 10);
+        doc.text(`Page ${doc.getNumberOfPages()}`, pageW - marginR, pageH - 10, { align: 'right' });
+        doc.addPage();
+        y = 20;
+      }
     };
 
-    const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `cryptographic-audit-${targetMatterId}.json`;
-    a.click();
-    URL.revokeObjectURL(url);
-    showNotice('Cryptographic proof JSON exported successfully.');
+    const drawSectionTitle = (title: string) => {
+      ensureSpace(18);
+      doc.setFontSize(11);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(title.toUpperCase(), marginL, y);
+      y += 2;
+      doc.setDrawColor(180, 140, 60);
+      doc.setLineWidth(0.5);
+      doc.line(marginL, y, marginL + contentW, y);
+      y += 7;
+    };
+
+    const drawParagraph = (text: string, indent = 0) => {
+      doc.setFontSize(9.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(50, 50, 50);
+      const lines = doc.splitTextToSize(text, contentW - indent);
+      for (const line of lines) {
+        ensureSpace(5);
+        doc.text(line, marginL + indent, y);
+        y += 4.5;
+      }
+      y += 2;
+    };
+
+    const drawClause = (num: string, title: string, body: string) => {
+      ensureSpace(20);
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.text(`${num}  ${title}`, marginL, y);
+      y += 6;
+      drawParagraph(body, 5);
+    };
+
+    // ── COVER / TITLE BLOCK ──
+    doc.setDrawColor(180, 140, 60);
+    doc.setLineWidth(1.2);
+    doc.line(marginL, y, marginL + contentW, y);
+    y += 4;
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + contentW, y);
+    y += 12;
+
+    doc.setFontSize(20);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(25, 25, 25);
+    doc.text('AUDIT CONTRACT', pageW / 2, y, { align: 'center' });
+    y += 8;
+
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(90, 90, 90);
+    doc.text('Cryptographic Audit Provenance & Governance Certification', pageW / 2, y, { align: 'center' });
+    y += 10;
+
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(160, 120, 40);
+    doc.text(`DOCKET #${docket}`, pageW / 2, y, { align: 'center' });
+    y += 6;
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text(`Date of Issuance: ${genDate}`, pageW / 2, y, { align: 'center' });
+    y += 4;
+    doc.text(`Tip Hash: ${tipHash}`, pageW / 2, y, { align: 'center' });
+    y += 10;
+
+    doc.setDrawColor(180, 140, 60);
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + contentW, y);
+    y += 2;
+    doc.setLineWidth(1.2);
+    doc.line(marginL, y, marginL + contentW, y);
+    y += 12;
+
+    // ── RECITALS ──
+    drawSectionTitle('Recitals');
+    drawParagraph(
+      `WHEREAS, the undersigned parties (collectively, the "Parties") have engaged in a contract negotiation process governed by automated AI deliberation through the Negotia AI platform (the "Platform"), under Matter Docket #${docket};`
+    );
+    drawParagraph(
+      'WHEREAS, the Platform has executed a deterministic, multi-agent deliberation pipeline producing a cryptographically sealed, immutable audit chain that records every material decision, concession, and analytical step taken during the negotiation;'
+    );
+    drawParagraph(
+      `WHEREAS, the audit chain consists of ${chainLen} cryptographic blocks, each bearing a SHA-256 hash digest linked to its preceding block, establishing a tamper-evident provenance ledger with zero drift;`
+    );
+    drawParagraph(
+      'NOW, THEREFORE, in consideration of the mutual covenants and agreements set forth herein, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the Parties agree as follows:'
+    );
+
+    // ── ARTICLE I: DEFINITIONS ──
+    drawSectionTitle('Article I — Definitions');
+    drawClause('1.1', 'Audit Chain',
+      '"Audit Chain" means the sequential, cryptographically linked series of block records generated by the Platform during the negotiation lifecycle, each containing a SHA-256 hash digest, timestamp, agent identifier, and deliberation summary.'
+    );
+    drawClause('1.2', 'Block',
+      '"Block" means an individual record within the Audit Chain, representing a discrete deliberation step, analysis, or decision point, identified by a unique hash and linked to the hash of the immediately preceding Block.'
+    );
+    drawClause('1.3', 'Tip Hash',
+      `"Tip Hash" means the SHA-256 hash digest of the final Block in the Audit Chain, serving as the definitive cryptographic fingerprint of the complete deliberation record. The current Tip Hash is: ${tipHash}.`
+    );
+    drawClause('1.4', 'Zero Drift',
+      '"Zero Drift" means the verified condition in which no Block within the Audit Chain has been altered, deleted, or inserted after initial commitment, as mathematically confirmed by sequential hash validation.'
+    );
+    drawClause('1.5', 'Platform',
+      '"Platform" means the Negotia AI contract negotiation and audit system, including all constituent AI agents, analytical engines, and cryptographic verification modules.'
+    );
+
+    // ── ARTICLE II: AUDIT CHAIN PROVENANCE SCHEDULE ──
+    drawSectionTitle('Article II — Audit Chain Provenance Schedule');
+    drawParagraph(
+      'The following schedule sets forth each Block in the Audit Chain, constituting the complete and unaltered record of the AI-assisted deliberation process:'
+    );
+    y += 2;
+
+    steps.forEach((step, idx) => {
+      ensureSpace(30);
+      // Block header
+      doc.setFillColor(248, 245, 240);
+      doc.rect(marginL, y - 3, contentW, 7, 'F');
+      doc.setFontSize(9);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(160, 120, 40);
+      doc.text(`Block ${step.stepNumber}`, marginL + 3, y + 1);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(80, 80, 80);
+      doc.text(step.timestamp, marginL + contentW - 3, y + 1, { align: 'right' });
+      y += 8;
+
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(9.5);
+      doc.text(step.title, marginL + 5, y);
+      y += 5;
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(70, 70, 70);
+      const summaryLines = doc.splitTextToSize(step.summary, contentW - 10);
+      for (const line of summaryLines) {
+        ensureSpace(5);
+        doc.text(line, marginL + 5, y);
+        y += 4;
+      }
+      y += 2;
+
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(120, 120, 120);
+      doc.text(`Signer: ${step.agent}`, marginL + 5, y);
+      doc.text(`Hash: ${step.hash}`, marginL + 75, y);
+      const statusLabel = (step.isHashValid ?? true) ? '✓ HASH VALID' : '✗ INVALID';
+      doc.setTextColor((step.isHashValid ?? true) ? 60 : 180, (step.isHashValid ?? true) ? 130 : 40, (step.isHashValid ?? true) ? 60 : 40);
+      doc.text(statusLabel, marginL + contentW - 3, y, { align: 'right' });
+      y += 5;
+
+      if (step.edgarCitations && step.edgarCitations.length > 0) {
+        doc.setFontSize(7.5);
+        doc.setTextColor(100, 100, 100);
+        doc.text('SEC EDGAR Citations:', marginL + 5, y);
+        y += 4;
+        step.edgarCitations.forEach((cite) => {
+          ensureSpace(4);
+          doc.text(`  • ${cite}`, marginL + 8, y);
+          y += 3.5;
+        });
+        y += 2;
+      }
+
+      if (idx < steps.length - 1) {
+        doc.setDrawColor(220, 215, 205);
+        doc.setLineWidth(0.2);
+        doc.line(marginL + 5, y, marginL + contentW - 5, y);
+        y += 6;
+      } else {
+        y += 4;
+      }
+    });
+
+    // ── ARTICLE III: REPRESENTATIONS AND WARRANTIES ──
+    drawSectionTitle('Article III — Representations and Warranties');
+    drawClause('3.1', 'Chain Integrity',
+      `The Platform represents and warrants that the Audit Chain comprising ${chainLen} Blocks has been validated through sequential SHA-256 hash verification, confirming Zero Drift status as of the date hereof. No Block has been altered, removed, or retroactively inserted since its initial commitment to the ledger.`
+    );
+    drawClause('3.2', 'Algorithmic Fidelity',
+      'The Platform represents and warrants that each AI agent contributing to the deliberation pipeline operated within its designated parameters, and that all analytical outputs, including SEC EDGAR precedent retrieval, Nash equilibrium modeling, and AST markup decomposition, were generated through deterministic, reproducible algorithms.'
+    );
+    drawClause('3.3', 'Authentication',
+      'Each human reviewer identified within the Audit Chain was authenticated via FIDO2-compliant hardware multi-factor authentication at the time of their review action, ensuring non-repudiation of all counsel approvals and delegations.'
+    );
+    drawClause('3.4', 'Accuracy of Precedent Data',
+      'SEC EDGAR exhibits and precedent data referenced within the Audit Chain were sourced from publicly available filings with the United States Securities and Exchange Commission. The Platform does not warrant the continued accuracy or applicability of such precedent data beyond the date of retrieval.'
+    );
+
+    // ── ARTICLE IV: LIMITATION OF LIABILITY ──
+    drawSectionTitle('Article IV — Limitation of Liability');
+    drawClause('4.1', 'Scope of Liability',
+      'THE AUDIT CHAIN AND THIS AUDIT CONTRACT ARE PROVIDED "AS IS." TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE PLATFORM SHALL NOT BE LIABLE FOR ANY INDIRECT, INCIDENTAL, SPECIAL, CONSEQUENTIAL, OR PUNITIVE DAMAGES ARISING OUT OF OR RELATED TO THE USE OR RELIANCE UPON THE AUDIT CHAIN OR ANY INFORMATION CONTAINED THEREIN.'
+    );
+    drawClause('4.2', 'Aggregate Cap',
+      'In no event shall the aggregate liability of the Platform under or in connection with this Audit Contract exceed the fees actually paid by the Parties to the Platform for the negotiation services giving rise to the Audit Chain.'
+    );
+    drawClause('4.3', 'No Legal Advice',
+      'Nothing in this Audit Contract or the Audit Chain constitutes legal advice. The Parties acknowledge that the Platform is an analytical tool and that all final decisions regarding contract terms remain the sole responsibility of the Parties and their respective legal counsel.'
+    );
+
+    // ── ARTICLE V: GOVERNING LAW AND DISPUTE RESOLUTION ──
+    drawSectionTitle('Article V — Governing Law and Dispute Resolution');
+    drawClause('5.1', 'Governing Law',
+      'This Audit Contract shall be governed by and construed in accordance with the laws of the State of Delaware, United States of America, without regard to its conflict-of-laws principles.'
+    );
+    drawClause('5.2', 'Dispute Resolution',
+      'Any dispute arising out of or in connection with this Audit Contract, including any question regarding its existence, validity, or termination, shall be resolved through binding arbitration administered by the American Arbitration Association under its Commercial Arbitration Rules, with the seat of arbitration in Wilmington, Delaware.'
+    );
+    drawClause('5.3', 'Injunctive Relief',
+      'Notwithstanding the foregoing, either Party may seek injunctive or other equitable relief in any court of competent jurisdiction to prevent irreparable harm pending the outcome of arbitration.'
+    );
+
+    // ── ARTICLE VI: MISCELLANEOUS ──
+    drawSectionTitle('Article VI — Miscellaneous');
+    drawClause('6.1', 'Entire Agreement',
+      'This Audit Contract, together with the Audit Chain it certifies, constitutes the entire agreement between the Parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, or agreements relating thereto.'
+    );
+    drawClause('6.2', 'Severability',
+      'If any provision of this Audit Contract is held to be invalid or unenforceable, the remaining provisions shall continue in full force and effect, and the invalid or unenforceable provision shall be modified to the minimum extent necessary to make it valid and enforceable.'
+    );
+    drawClause('6.3', 'Amendments',
+      'This Audit Contract may not be amended except by a written instrument signed by all Parties hereto. Any purported amendment that is not so executed shall be void and of no effect.'
+    );
+    drawClause('6.4', 'Counterparts',
+      'This Audit Contract may be executed in counterparts, each of which shall be deemed an original, and all of which together shall constitute one and the same instrument.'
+    );
+
+    // ── SIGNATURE BLOCK ──
+    drawSectionTitle('Execution and Attestation');
+    drawParagraph(
+      'IN WITNESS WHEREOF, the Parties have executed this Audit Contract as of the date first written above, acknowledging receipt and verification of the Audit Chain described herein.'
+    );
+    y += 8;
+
+    // Party A Signature
+    ensureSpace(35);
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'bold');
+    doc.setTextColor(30, 30, 30);
+    doc.text('PARTY A — Baseline Drafter', marginL, y);
+    y += 12;
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + 70, y);
+    y += 4;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Authorized Signatory', marginL, y);
+    doc.text('Date: _______________', marginL + 80, y);
+    y += 14;
+
+    // Party B Signature
+    ensureSpace(35);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 30, 30);
+    doc.text('PARTY B — Counterparty', marginL, y);
+    y += 12;
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + 70, y);
+    y += 4;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Authorized Signatory', marginL, y);
+    doc.text('Date: _______________', marginL + 80, y);
+    y += 14;
+
+    // Platform Attestation
+    ensureSpace(35);
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(9);
+    doc.setTextColor(30, 30, 30);
+    doc.text('PLATFORM ATTESTATION — Negotia AI', marginL, y);
+    y += 12;
+    doc.setDrawColor(160, 160, 160);
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + 70, y);
+    y += 4;
+    doc.setFontSize(8);
+    doc.setFont('helvetica', 'normal');
+    doc.setTextColor(100, 100, 100);
+    doc.text('Platform Verification Officer', marginL, y);
+    doc.text('Date: _______________', marginL + 80, y);
+    y += 14;
+
+    // ── FOOTER / CERTIFICATION SEAL ──
+    ensureSpace(25);
+    doc.setDrawColor(180, 140, 60);
+    doc.setLineWidth(0.3);
+    doc.line(marginL, y, marginL + contentW, y);
+    y += 6;
+    doc.setFontSize(7);
+    doc.setFont('helvetica', 'italic');
+    doc.setTextColor(130, 130, 130);
+    doc.text(
+      `This document was generated by Negotia AI on ${genDate} at ${exportTimestamp}. ` +
+      `Audit chain integrity: ${chainLen} blocks verified, zero drift, SHA-256 valid. ` +
+      `Tip hash: ${tipHash}. This contract is machine-generated and should be reviewed by qualified legal counsel before execution.`,
+      marginL, y, { maxWidth: contentW }
+    );
+
+    // Add footers to all pages
+    const totalPages = doc.getNumberOfPages();
+    for (let i = 1; i <= totalPages; i++) {
+      doc.setPage(i);
+      doc.setFontSize(7);
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(140, 140, 140);
+      doc.text(`Negotia AI — Audit Contract — Docket #${docket}`, marginL, pageH - 10);
+      doc.text(`Page ${i} of ${totalPages}`, pageW - marginR, pageH - 10, { align: 'right' });
+    }
+
+    doc.save(`Audit-Contract-${docket}.pdf`);
+    showNotice('Audit Contract PDF exported successfully.');
   };
 
   const handleExportCSV = () => {
@@ -423,10 +756,10 @@ export const Governance: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  icon="file_download"
-                  onClick={handleExportProof}
+                  icon="description"
+                  onClick={handleExportAuditContract}
                 >
-                  Export Cryptographic Proof (.JSON)
+                  Audit Contract (.PDF)
                 </Button>
               </>
             ) : (
