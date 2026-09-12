@@ -35,8 +35,11 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
+from starlette.websockets import WebSocketState
+
 from app.db.database import SessionLocal
 from app.db.models import NegotiationRoomDB
+from app.services.room_service import sync_room
 
 logger = logging.getLogger(__name__)
 
@@ -67,6 +70,14 @@ class NegotiationConnectionRegistry:
         async with self._lock:
             if room_id not in self._rooms:
                 self._rooms[room_id] = []
+
+            # Prune closed or dead sockets first
+            alive = []
+            for e in self._rooms[room_id]:
+                ws_obj = e.get("ws")
+                if ws_obj and getattr(ws_obj, "client_state", None) == WebSocketState.CONNECTED:
+                    alive.append(e)
+            self._rooms[room_id] = alive
 
             # Check unique participant roles/IDs already in room
             current_pids = {entry["participant_id"] for entry in self._rooms[room_id]}
@@ -101,8 +112,12 @@ class NegotiationConnectionRegistry:
 
     def get_active_count(self, room_id: str) -> int:
         entries = self._rooms.get(room_id, [])
-        unique_pids = {e["participant_id"] for e in entries}
-        return max(1, len(unique_pids))
+        alive_pids = {
+            e["participant_id"]
+            for e in entries
+            if e.get("ws") and getattr(e["ws"], "client_state", None) == WebSocketState.CONNECTED
+        }
+        return len(alive_pids)
 
     async def broadcast(self, room_id: str, event: dict, exclude_conn_id: Optional[str] = None):
         """Broadcast event to all connected sockets in room."""
@@ -210,11 +225,19 @@ async def negotiation_websocket_endpoint(
             return
 
         # Verification: Only admitted participants can connect
-        is_creator = (token and token == room.creator_token) or (participant_id and participant_id == room.creator_id)
-        is_admitted_guest = (
-            ((token and token == room.guest_token) or (participant_id and participant_id in (room.participant_id, room.guest_id)))
-            and (room.guest_status == "admitted")
-        )
+        req_role = (participant_id or "").lower()
+        if req_role == "creator":
+            is_creator = True
+            is_admitted_guest = False
+        elif req_role in ("participant", "guest", "seller"):
+            is_creator = False
+            is_admitted_guest = True
+        else:
+            is_creator = (token and token == room.creator_token) or (participant_id and participant_id == room.creator_id)
+            is_admitted_guest = (
+                ((token and token == room.guest_token) or (participant_id and participant_id in (room.participant_id, room.guest_id)))
+                and (room.guest_status == "admitted")
+            )
 
         # Resilient fallback: if room is active or guest was admitted, allow counterparty connection
         if not is_creator and not is_admitted_guest:
@@ -247,6 +270,16 @@ async def negotiation_websocket_endpoint(
     if not registered:
         return
 
+    active_cnt = registry.get_active_count(clean_room_id)
+    with SessionLocal() as db:
+        cur_room = db.query(NegotiationRoomDB).filter(
+            (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
+        ).first()
+        if cur_room:
+            cur_room.active_participants_count = active_cnt
+            db.commit()
+            sync_room(cur_room)
+
     # Broadcast shared 'join' event to both participants
     now_iso = datetime.utcnow().isoformat() + "Z"
     join_event = {
@@ -254,10 +287,10 @@ async def negotiation_websocket_endpoint(
         "sender_id": pid,
         "sender_name": sender_name,
         "sender_role": sender_role,
-        "active_participants_count": registry.get_active_count(clean_room_id),
+        "active_participants_count": active_cnt,
         "timestamp": now_iso,
     }
-    persist_event_to_db(clean_room_id, join_event)
+    # Ephemeral broadcast only: do not persist transient socket joins into database messages log
     await registry.broadcast(clean_room_id, join_event)
 
     # Send recent message history to the newly connected participant
@@ -427,17 +460,38 @@ async def negotiation_websocket_endpoint(
 
     except WebSocketDisconnect:
         await registry.unregister(clean_room_id, websocket)
+        active_count = registry.get_active_count(clean_room_id)
         disc_event = {
             "type": "leave",
             "sender_id": pid,
             "sender_name": sender_name,
             "sender_role": sender_role,
             "status": "disconnected",
+            "active_participants_count": active_count,
             "timestamp": datetime.utcnow().isoformat() + "Z",
         }
-        persist_event_to_db(clean_room_id, disc_event)
         await registry.broadcast(clean_room_id, disc_event)
     except Exception as ex:
         logger.error(f"[NegotiationWS {clean_room_id}] Error in socket connection: {ex}")
     finally:
         await registry.unregister(clean_room_id, websocket)
+        cur_count = registry.get_active_count(clean_room_id)
+        try:
+            with SessionLocal() as db:
+                cur_room = db.query(NegotiationRoomDB).filter(
+                    (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
+                ).first()
+                if cur_room:
+                    cur_room.active_participants_count = cur_count
+                    db.commit()
+                    sync_room(cur_room)
+        except Exception as ex:
+            logger.warning(f"[NegotiationWS {clean_room_id}] Error updating room count on disconnect: {ex}")
+        try:
+            await registry.broadcast(clean_room_id, {
+                "type": "presence_update",
+                "active_participants_count": cur_count,
+                "timestamp": datetime.utcnow().isoformat() + "Z",
+            })
+        except Exception:
+            pass

@@ -159,7 +159,9 @@ def serialize_room(room: NegotiationRoomDB, include_tokens: bool = False) -> Dic
         "matter_id": room.matter_id,
         "title": room.title,
         "passcode": room.passcode if (room.passcode and room.passcode.strip()) else None,
-        "active_participants_count": room.active_participants_count,
+        "active_participants_count": (
+            (lambda r: (getattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]).registry, "get_active_count")(r) if hasattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]), "registry") else room.active_participants_count))(rid)
+        ),
         "messages": list(room.messages or []),
         "created_at": (room.created_at.isoformat() + "Z") if room.created_at else None,
         "closed_at": (room.closed_at.isoformat() + "Z") if room.closed_at else None,
