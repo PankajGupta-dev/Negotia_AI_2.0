@@ -230,7 +230,7 @@ class NegotiationRoomDB(Base):
 
     # Additional metadata fields for room management and live WebSocket communication
     title: Mapped[str] = mapped_column(String, default="Private Bilateral Negotiation Room")
-    passcode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="SEC-0000")
+    passcode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="")
     creator_name: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="Creator")
     creator_role: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="buyer")
     creator_token: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
