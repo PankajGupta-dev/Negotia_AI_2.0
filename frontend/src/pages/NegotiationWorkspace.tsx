@@ -13,6 +13,7 @@ import {
   getMatterDeliberations,
   subscribeToPipelineStream,
   getPrivateRoom,
+  sendRoomMessage,
   admitParticipant,
   rejectParticipant,
   closePrivateRoom,
@@ -23,7 +24,28 @@ import {
   RoomPublicDetail,
 } from '../services/api';
 
+const formatMessageTime = (rawTs?: string | number): string => {
+  if (!rawTs) return '';
+  try {
+    let s = String(rawTs).trim();
+    if (s.includes('T') && !s.endsWith('Z') && !s.includes('+') && !s.slice(10).includes('-')) {
+      s += 'Z';
+    }
+    const d = new Date(s);
+    if (isNaN(d.getTime())) return String(rawTs);
+    return d.toLocaleTimeString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: true,
+    });
+  } catch {
+    return String(rawTs);
+  }
+};
+
 interface BilateralRoomEvent {
+  id?: string;
   type: 'join' | 'leave' | 'message' | 'clause_submitted' | 'proposal' | 'room_closed' | 'system' | string;
   sender_id?: string;
   sender_name?: string;
@@ -198,8 +220,27 @@ export const NegotiationWorkspace: React.FC = () => {
               name: detail.guest_name,
               role: detail.guest_role || 'seller',
             });
-          } else if (detail.guest_status === 'admitted') {
+          } else if (detail.guest_status === 'admitted' || detail.status === 'active') {
             setPendingApplicant(null);
+            setActivePartyCount(2);
+          }
+
+          // Resilient message sync: merge persisted messages from DB & MongoDB Atlas
+          if (Array.isArray(detail.messages) && detail.messages.length > 0) {
+            setBilateralEvents((prev) => {
+              const prevKeys = new Set(prev.map((e) => `${e.timestamp}_${e.text || e.clause_id || e.sender_name || ''}`));
+              let hasNew = false;
+              const merged = [...prev];
+              for (const m of detail.messages!) {
+                const key = `${m.timestamp}_${m.text || m.clause_id || m.sender_name || ''}`;
+                if (!prevKeys.has(key)) {
+                  prevKeys.add(key);
+                  merged.push(m);
+                  hasNew = true;
+                }
+              }
+              return hasNew ? merged : prev;
+            });
           }
         }
       } catch {}
@@ -247,6 +288,11 @@ export const NegotiationWorkspace: React.FC = () => {
     localStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
     localStorage.getItem('negotia_creator_room_id') === targetMatterId ||
     (roomDetail?.creator_id && user && (roomDetail.creator_id === user.uid || roomDetail.creator_name === user.name));
+
+  const displayCapacity =
+    (roomDetail?.guest_status === 'admitted' || roomDetail?.status === 'active' || activePartyCount >= 2)
+      ? 2
+      : Math.max(1, activePartyCount);
 
   const handleStopRoom = async () => {
     if (!targetMatterId) return;
@@ -384,15 +430,34 @@ export const NegotiationWorkspace: React.FC = () => {
         try {
           const data = JSON.parse(evt.data);
           const now = data.timestamp || new Date().toISOString();
-
-          if (data.type === 'join') {
-            setBilateralEvents((prev) => [...prev, { ...data, timestamp: now }]);
+          if (data.type === 'history' && Array.isArray(data.messages)) {
+            setBilateralEvents((prev) => {
+              const prevKeys = new Set(prev.map((e) => `${e.timestamp}_${e.text || e.clause_id || e.sender_name || ''}`));
+              let hasNew = false;
+              const merged = [...prev];
+              for (const m of data.messages) {
+                const key = `${m.timestamp}_${m.text || m.clause_id || m.sender_name || ''}`;
+                if (!prevKeys.has(key)) {
+                  prevKeys.add(key);
+                  merged.push(m);
+                  hasNew = true;
+                }
+              }
+              return hasNew ? merged : prev;
+            });
+          } else if (data.type === 'join') {
+            setBilateralEvents((prev) => {
+              if (prev.some((e) => e.type === 'join' && (e.sender_role === data.sender_role || e.sender_id === data.sender_id))) {
+                return prev;
+              }
+              return [...prev, { ...data, timestamp: now }];
+            });
             if (typeof data.active_participants_count === 'number') {
               setActivePartyCount(data.active_participants_count);
             }
             if (data.sender_name) {
               setPresenceNotice({
-                text: `${data.sender_name} (${data.sender_role || 'counsel'}) joined the room`,
+                text: `${data.sender_name} joined the room`,
                 type: 'join',
               });
             }
@@ -401,7 +466,7 @@ export const NegotiationWorkspace: React.FC = () => {
             setActivePartyCount((prev) => Math.max(1, prev - 1));
             if (data.sender_name) {
               setPresenceNotice({
-                text: `${data.sender_name} (${data.sender_role || 'counsel'}) left the room`,
+                text: `${data.sender_name} left the room`,
                 type: 'leave',
               });
             }
@@ -437,7 +502,13 @@ export const NegotiationWorkspace: React.FC = () => {
             data.type === 'proposal' ||
             data.type === 'system'
           ) {
-            setBilateralEvents((prev) => [...prev, { ...data, timestamp: now }]);
+            setBilateralEvents((prev) => {
+              const key = `${now}_${data.text || data.clause_id || data.proposal || ''}`;
+              if (prev.some((e) => `${e.timestamp}_${e.text || e.clause_id || e.proposal || ''}` === key)) {
+                return prev;
+              }
+              return [...prev, { ...data, timestamp: now }];
+            });
           }
         } catch (err) {
           console.error('Error parsing negotiation WebSocket message', err);
@@ -471,32 +542,30 @@ export const NegotiationWorkspace: React.FC = () => {
 
   // Connect on room entry and cleanly disconnect on page exit
   useEffect(() => {
-    isUnmountedRef.current = false;
-    isClosedRef.current = false;
-
-    if (targetMatterId.startsWith('NEG-')) {
-      connectNegotiationWs(targetMatterId);
-    }
+    if (!targetMatterId.startsWith('NEG-')) return;
+    connectNegotiationWs(targetMatterId);
 
     return () => {
       isUnmountedRef.current = true;
       if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
       if (wsRef.current) {
         try {
-          // Do NOT send { type: 'leave' } on unmount or tab switch!
-          // Page exit or navigation is not an abandonment of the negotiation.
-          wsRef.current.close(1000, 'Page Exit');
+          wsRef.current.onclose = null;
+          wsRef.current.onerror = null;
+          wsRef.current.close();
         } catch {}
         wsRef.current = null;
       }
     };
   }, [targetMatterId]);
 
-  // Tab switching / focus sync: reconnect WebSocket if disconnected while in another tab
+  // Re-verify and re-connect when window gains focus
   useEffect(() => {
+    if (!targetMatterId.startsWith('NEG-')) return;
+
     const handleWorkspaceFocus = () => {
       if (
-        targetMatterId.startsWith('NEG-') &&
+        !isUnmountedRef.current &&
         !isClosedRef.current &&
         (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING)
       ) {
@@ -516,17 +585,66 @@ export const NegotiationWorkspace: React.FC = () => {
   }, [targetMatterId]);
 
   // Send shared negotiation message
-  const handleSendBilateralMessage = (e: React.FormEvent) => {
+  const handleSendBilateralMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+    const cleanText = chatInput.trim();
+    if (!cleanText) return;
 
-    wsRef.current.send(
-      JSON.stringify({
-        type: 'message',
-        text: chatInput.trim(),
-      })
-    );
+    const myRole = isCreatorOfRoom ? 'buyer' : 'seller';
+    const myName = isCreatorOfRoom
+      ? (roomDetail?.creator_name || user?.name || 'Negotiation Demo (Buyer)')
+      : (roomDetail?.guest_name || user?.name || 'Negotiation Demo (Seller)');
+    const myId = isCreatorOfRoom ? roomDetail?.creator_id : (roomDetail?.participant_id || roomDetail?.guest_id);
+
+    const token =
+      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem('negotia_creator_room_token') ||
+      localStorage.getItem('negotia_participant_room_token') ||
+      '';
+
     setChatInput('');
+
+    // Optimistically add to local feed if not already present
+    const tempNow = new Date().toISOString();
+    setBilateralEvents((prev) => [
+      ...prev,
+      {
+        type: 'message',
+        sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
+        sender_name: myName,
+        sender_role: myRole,
+        text: cleanText,
+        timestamp: tempNow,
+      },
+    ]);
+
+    // Send over WebSocket if connected
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.current.send(
+          JSON.stringify({
+            type: 'message',
+            text: cleanText,
+          })
+        );
+      } catch (err) {
+        console.warn('WS send failed, relying on REST fallback', err);
+      }
+    }
+
+    // Always persist to backend via REST to ensure MongoDB & SQLite consistency across laptops
+    try {
+      await sendRoomMessage(targetMatterId, {
+        text: cleanText,
+        sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
+        sender_name: myName,
+        sender_role: myRole,
+        token: token,
+      });
+    } catch (err) {
+      console.warn('REST message persist notice:', err);
+    }
   };
 
   // Send currently selected clause proposal over WebSocket
@@ -1364,11 +1482,6 @@ export const NegotiationWorkspace: React.FC = () => {
                 >
                   <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-outline-variant'}`} />
                   <span>2-Party Room</span>
-                  {bilateralEvents.length > 0 && (
-                    <span className="text-[10px] px-1 rounded bg-black/20 font-bold">
-                      {bilateralEvents.length}
-                    </span>
-                  )}
                 </button>
                 <button
                   type="button"
@@ -1427,7 +1540,7 @@ export const NegotiationWorkspace: React.FC = () => {
                     </span>
                   </div>
                   <span className="text-[10px] text-outline">
-                    Capacity: {activePartyCount} / 2
+                    Capacity: {displayCapacity} / 2
                   </span>
                 </div>
 
@@ -1446,10 +1559,12 @@ export const NegotiationWorkspace: React.FC = () => {
                   ) : (
                     bilateralEvents.map((evt, idx) => {
                       if (evt.type === 'join') {
+                        const baseName = (evt.sender_name || 'Counsel').replace(/\s*\((buyer|seller)\)/gi, '').trim();
+                        const roleLabel = evt.sender_role || (baseName.toLowerCase().includes('seller') ? 'seller' : 'buyer');
                         return (
                           <div key={idx} className="text-center my-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/15 text-secondary border border-secondary/30">
-                              {evt.sender_name || 'Counsel'} ({evt.sender_role || 'party'}) joined
+                            <span className="text-[10px] font-mono px-2.5 py-0.5 rounded-full bg-secondary/15 text-secondary border border-secondary/30">
+                              {baseName} ({roleLabel}) joined
                             </span>
                           </div>
                         );
@@ -1491,19 +1606,25 @@ export const NegotiationWorkspace: React.FC = () => {
                       }
 
                       // Default 'message'
-                      const isOwn = evt.sender_id === (isCreatorOfRoom ? roomDetail?.creator_id : roomDetail?.participant_id);
+                      const myRole = isCreatorOfRoom ? 'buyer' : 'seller';
+                      const isOwn =
+                        (evt.sender_role && evt.sender_role.toLowerCase() === myRole) ||
+                        (evt.sender_id && evt.sender_id === (isCreatorOfRoom ? roomDetail?.creator_id : (roomDetail?.participant_id || roomDetail?.guest_id))) ||
+                        (isCreatorOfRoom
+                          ? (evt.sender_name?.toLowerCase().includes('buyer') ?? false)
+                          : (evt.sender_name?.toLowerCase().includes('seller') ?? false));
 
                       return (
                         <div
-                          key={idx}
+                          key={evt.id || idx}
                           className={`flex flex-col max-w-[85%] ${
                             isOwn ? 'ml-auto items-end' : 'mr-auto items-start'
                           }`}
                         >
                           <div className="flex items-center gap-1 text-[10px] font-mono text-outline mb-0.5">
-                            <span>{evt.sender_name || 'Counsel'}</span>
+                            <span>{evt.sender_name || (isOwn ? 'You' : 'Counterparty Counsel')}</span>
                             <span>•</span>
-                            <span>{new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                            <span>{formatMessageTime(evt.timestamp)}</span>
                           </div>
                           <div
                             className={`p-2.5 rounded-lg text-xs leading-relaxed ${

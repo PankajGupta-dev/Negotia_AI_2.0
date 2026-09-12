@@ -160,8 +160,9 @@ def serialize_room(room: NegotiationRoomDB, include_tokens: bool = False) -> Dic
         "title": room.title,
         "passcode": room.passcode if (room.passcode and room.passcode.strip()) else None,
         "active_participants_count": room.active_participants_count,
-        "created_at": room.created_at.isoformat() if room.created_at else None,
-        "closed_at": room.closed_at.isoformat() if room.closed_at else None,
+        "messages": list(room.messages or []),
+        "created_at": (room.created_at.isoformat() + "Z") if room.created_at else None,
+        "closed_at": (room.closed_at.isoformat() + "Z") if room.closed_at else None,
     }
 
     # Pipeline & Submission state flags (party-private documents/drafting kept strictly private)
@@ -307,6 +308,80 @@ def get_room_endpoint(
     return serialize_room(room)
 
 
+@router.get("/{room_id}/messages")
+def get_room_messages_endpoint(
+    room_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    GET /api/rooms/{room_id}/messages
+    Retrieve all persisted room messages for bilateral private room.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Negotiation room '{clean_room_id}' not found."
+        )
+    return {
+        "room_id": clean_room_id,
+        "messages": list(room.messages or []),
+    }
+
+
+@router.post("/{room_id}/messages")
+async def post_room_message_endpoint(
+    room_id: str,
+    payload: Dict[str, Any] = Body(...),
+    db: Session = Depends(get_db),
+):
+    """
+    POST /api/rooms/{room_id}/messages
+    Post bilateral message via REST API (cross-tab & multi-laptop fallback).
+    Persists to DB/MongoDB and broadcasts to all WebSocket listeners.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
+    if not room:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Negotiation room '{clean_room_id}' not found."
+        )
+
+    text = (payload.get("text") or "").strip()
+    if not text:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Message text cannot be empty."
+        )
+
+    sender_id = payload.get("sender_id") or "participant"
+    sender_name = payload.get("sender_name") or "Counsel"
+    sender_role = payload.get("sender_role") or "seller"
+    timestamp = datetime.utcnow().isoformat() + "Z"
+
+    msg_event = {
+        "id": f"msg_{secrets.token_hex(6)}",
+        "type": "message",
+        "sender_id": sender_id,
+        "sender_name": sender_name,
+        "sender_role": sender_role,
+        "text": text,
+        "timestamp": timestamp,
+    }
+
+    try:
+        from app.routers.negotiation_ws import persist_event_to_db, registry as neg_registry
+        persist_event_to_db(clean_room_id, msg_event)
+        await neg_registry.broadcast(clean_room_id, msg_event)
+    except Exception as ex:
+        logger.warning(f"[RoomsAPI] Failed broadcasting via neg_registry: {ex}")
+
+    await ws_manager.broadcast_to_room(clean_room_id, msg_event)
+    return {"status": "success", "message": msg_event}
+
+
 @router.post("/{room_id}/join")
 async def join_room_endpoint(
     room_id: str,
@@ -364,10 +439,10 @@ async def join_room_endpoint(
         {
             "type": "guest_knock",
             "room_id": clean_room_id,
-            "guest_id": pid,
-            "guest_name": pname,
-            "guest_role": prole,
-            "timestamp": datetime.utcnow().isoformat(),
+            "guest_id": updated_room.guest_id or pid,
+            "guest_name": updated_room.guest_name or pname,
+            "guest_role": updated_room.guest_role or prole,
+            "timestamp": datetime.utcnow().isoformat() + "Z",
         },
     )
 

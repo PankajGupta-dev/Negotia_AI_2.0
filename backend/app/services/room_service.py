@@ -265,8 +265,17 @@ def request_join(
         raise ValueError("Room is full (maximum 2 participants admitted). Only one additional participant is allowed.")
 
     guest_token = room.guest_token or f"gtok_{secrets.token_hex(12)}"
-    clean_name = participant_name.strip() if participant_name and participant_name.strip() else f"Counterparty Counsel"
-    clean_role = participant_role or ("seller" if room.creator_role == "buyer" else "buyer")
+    creator_r = (room.creator_role or "buyer").lower()
+    forced_guest_role = "seller" if creator_r == "buyer" else "buyer"
+    clean_role = forced_guest_role
+
+    raw_name = (participant_name or "").strip()
+    if not raw_name:
+        clean_name = f"Counterparty Counsel ({clean_role.capitalize()})"
+    else:
+        clean_name = raw_name.replace("(buyer)", f"({clean_role})").replace("(Buyer)", f"({clean_role.capitalize()})")
+        if f"({clean_role})" not in clean_name.lower():
+            clean_name = f"{clean_name} ({clean_role})"
 
     room.participant_id = participant_id
     room.guest_id = participant_id

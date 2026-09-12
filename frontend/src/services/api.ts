@@ -782,9 +782,23 @@ export interface RoomPublicDetail {
   participant_id?: string;
   participant?: { id: string; name: string; role: string; status: string };
   passcode?: string | null;
+  guest_id?: string;
   active_participants_count: number;
+  messages?: any[];
   created_at: string;
   closed_at?: string;
+}
+
+export async function sendRoomMessage(
+  roomId: string,
+  payload: { text: string; sender_id?: string; sender_name?: string; sender_role?: string; token?: string }
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/messages`, {
+    method: 'POST',
+    headers: payload.token ? { 'X-Room-Token': payload.token } : {},
+    body: JSON.stringify(payload),
+  });
 }
 
 export interface JoinRoomPayload {
