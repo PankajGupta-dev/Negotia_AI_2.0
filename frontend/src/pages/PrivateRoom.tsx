@@ -330,6 +330,18 @@ export const PrivateRoom: React.FC = () => {
           if (detail.guest_status === 'admitted' || detail.status === 'active') {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(true);
+            const savedToken = localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) || localStorage.getItem(`room_${roomId}_token`) || '';
+            localStorage.setItem(STORAGE_PARTICIPANT_ROOM, roomId);
+            if (savedToken) {
+              localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
+              localStorage.setItem(`room_${roomId}_token`, savedToken);
+              sessionStorage.setItem(`room_${roomId}_token`, savedToken);
+            }
+            localStorage.setItem(`room_${roomId}_role`, 'participant');
+            sessionStorage.setItem(`room_${roomId}_role`, 'participant');
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
+            navigate(`/negotiations/${roomId}`);
+            return;
           } else if (detail.guest_status === 'rejected') {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(false);
@@ -358,7 +370,7 @@ export const PrivateRoom: React.FC = () => {
           const data = JSON.parse(event.data);
 
           // Creator: counterparty knocked
-          if (userType === 'creator' && data.type === 'guest_knock') {
+          if (userType === 'creator' && (data.type === 'guest_knock' || data.type === 'join_requested')) {
             setPendingApplicant({
               id: data.guest_id,
               name: data.guest_name || 'Counterparty Counsel',
@@ -367,23 +379,33 @@ export const PrivateRoom: React.FC = () => {
             });
           }
 
-          // Participant: admitted by creator -> update state and allow opening workspace
-          if (userType === 'participant' && (data.type === 'guest_admitted' || data.type === 'admit')) {
+          // Participant: admitted by creator -> update state and enter negotiation workspace
+          if (
+            userType === 'participant' &&
+            (data.type === 'participant_admitted' || data.type === 'guest_admitted' || data.type === 'admit')
+          ) {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(true);
+            localStorage.setItem(STORAGE_PARTICIPANT_ROOM, targetRoomId);
+            localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, token);
             localStorage.setItem(`room_${targetRoomId}_role`, 'participant');
             localStorage.setItem(`room_${targetRoomId}_token`, token);
             sessionStorage.setItem(`room_${targetRoomId}_role`, 'participant');
             sessionStorage.setItem(`room_${targetRoomId}_token`, token);
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             navigate(`/negotiations/${targetRoomId}`);
           }
 
           // Participant: rejected by creator
-          if (userType === 'participant' && data.type === 'guest_rejected') {
+          if (
+            userType === 'participant' &&
+            (data.type === 'participant_rejected' || data.type === 'guest_rejected' || data.type === 'reject')
+          ) {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(false);
             setRejectionNotice('Your admission request was rejected by the room creator.');
             clearParticipantStorage();
+            if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
           }
 
           // Room closed event
@@ -906,7 +928,18 @@ export const PrivateRoom: React.FC = () => {
                   variant="primary"
                   size="md"
                   icon="login"
-                  onClick={() => navigate(`/negotiations/${joinRoomId}`)}
+                  onClick={() => {
+                    const savedToken = localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) || localStorage.getItem(`room_${joinRoomId}_token`) || '';
+                    localStorage.setItem(STORAGE_PARTICIPANT_ROOM, joinRoomId);
+                    if (savedToken) {
+                      localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
+                      localStorage.setItem(`room_${joinRoomId}_token`, savedToken);
+                      sessionStorage.setItem(`room_${joinRoomId}_token`, savedToken);
+                    }
+                    localStorage.setItem(`room_${joinRoomId}_role`, 'participant');
+                    sessionStorage.setItem(`room_${joinRoomId}_role`, 'participant');
+                    navigate(`/negotiations/${joinRoomId}`);
+                  }}
                 >
                   Enter Negotiation Chamber
                 </Button>

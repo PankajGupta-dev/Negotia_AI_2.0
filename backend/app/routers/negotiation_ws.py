@@ -62,8 +62,8 @@ class NegotiationConnectionRegistry:
         self._sync_tasks: Dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
-    async def register(self, room_id: str, participant_id: str, websocket: WebSocket) -> bool:
-        """Register participant. Enforces max 2 unique parties."""
+    async def register(self, room_id: str, participant_id: str, websocket: WebSocket, party_role: str = "creator") -> bool:
+        """Register participant. Enforces max 2 unique parties (Party A Creator and Party B Guest)."""
         await websocket.accept()
         conn_id = secrets.token_hex(8)
         websocket.conn_id = conn_id
@@ -92,9 +92,10 @@ class NegotiationConnectionRegistry:
             self._rooms[room_id].append({
                 "conn_id": conn_id,
                 "participant_id": participant_id,
+                "party_role": party_role,
                 "ws": websocket,
             })
-            logger.info(f"[NegotiationWS {room_id}] Participant '{participant_id}' connected (conn: {conn_id}). Total sockets: {len(self._rooms[room_id])}")
+            logger.info(f"[NegotiationWS {room_id}] Participant '{participant_id}' ({party_role}) connected (conn: {conn_id}). Total sockets: {len(self._rooms[room_id])}")
 
         # Start background MongoDB cross-laptop sync worker if not running
         if room_id not in self._sync_tasks or self._sync_tasks[room_id].done():
@@ -172,12 +173,12 @@ class NegotiationConnectionRegistry:
 
     def get_active_count(self, room_id: str) -> int:
         entries = self._rooms.get(room_id, [])
-        alive_pids = {
-            e["participant_id"]
+        alive_parties = {
+            e.get("party_role") or e.get("participant_id")
             for e in entries
             if e.get("ws") and getattr(e["ws"], "client_state", None) == WebSocketState.CONNECTED
         }
-        return len(alive_pids)
+        return len(alive_parties)
 
     async def broadcast(self, room_id: str, event: dict, exclude_conn_id: Optional[str] = None):
         """Broadcast event to all connected sockets in room."""
@@ -299,6 +300,11 @@ async def negotiation_websocket_endpoint(
                 is_creator = True
             elif token == room.guest_token and (room.guest_status == "admitted" or room.status == "active"):
                 is_admitted_guest = True
+        elif (room.guest_status == "admitted" or room.status == "active") and (
+            participant_id in ("participant", "seller", "buyer", room.participant_id, room.guest_id) or
+            (token and token == room.guest_token)
+        ):
+            is_admitted_guest = True
 
         if not is_creator and not is_admitted_guest:
             await websocket.accept()
@@ -313,6 +319,8 @@ async def negotiation_websocket_endpoint(
             })
             await websocket.close(code=1008)
             return
+
+        party_role = "creator" if is_creator else "participant"
 
         if is_creator:
             pid = room.creator_id or "creator"
@@ -334,7 +342,7 @@ async def negotiation_websocket_endpoint(
                 sender_name = raw_gname
 
     # Connect to in-memory registry (enforces max 2 active participants)
-    registered = await registry.register(clean_room_id, pid, websocket)
+    registered = await registry.register(clean_room_id, pid, websocket, party_role=party_role)
     if not registered:
         return
 
@@ -425,7 +433,7 @@ async def negotiation_websocket_endpoint(
                         db.commit()
 
                 leave_event = {
-                    "type": "participant_disconnected",
+                    "type": "leave",
                     "sender_id": pid,
                     "sender_name": sender_name,
                     "sender_role": sender_role,

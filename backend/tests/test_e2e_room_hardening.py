@@ -99,6 +99,28 @@ class TestPrivateRoomEndToEnd(unittest.TestCase):
         self.assertEqual(data.get("guest_status"), "admitted")
         print(f"  ✓ Participant admitted: status={data['status']}")
 
+    def test_04b_participant_connects_websocket_smoothly(self):
+        """Admitted participant enters /ws/negotiation/{room_id} without 1008 fallback."""
+        # Creator connects
+        with self.client.websocket_connect(
+            f"/ws/negotiation/{self.room_id}?token={self.creator_token}&participant_id=creator"
+        ) as ws_creator:
+            # Admitted participant connects smoothly
+            with self.client.websocket_connect(
+                f"/ws/negotiation/{self.room_id}?token={self.guest_token}&participant_id=participant"
+            ) as ws_guest:
+                data = ws_guest.receive_json()
+                self.assertIn("type", data)
+                # Sockets communicate properly
+                ws_guest.send_json({
+                    "type": "message",
+                    "sender_id": getattr(self, "participant_id", None) or "seller_guest",
+                    "sender_name": "Pankaj Kumar Gupta (Seller)",
+                    "sender_role": "seller",
+                    "text": "Hello chamber from admitted participant",
+                })
+        print("  ✓ Admitted participant smoothly connects to WebSocket chamber without 1008 fallback")
+
     def test_05_third_participant_rejected(self):
         """Third participant cannot join (max 2)."""
         res = self.client.post(f"/api/rooms/{self.room_id}/join", json={

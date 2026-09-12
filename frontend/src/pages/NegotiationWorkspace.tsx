@@ -883,11 +883,32 @@ export const NegotiationWorkspace: React.FC = () => {
       ws.onclose = (event) => {
         setWsConnected(false);
         if (event.code === 1008) {
-          isClosedRef.current = true;
-          setWsReconnecting(false);
-          navigate(`/private-room?room=${roomId}`, {
-            replace: true,
-            state: { error: 'Access Denied: You must request admission and be admitted by the creator to enter.' },
+          if (roomDetail?.status === 'closed' || isClosedRef.current) {
+            return;
+          }
+          // Verify room status before kicking out to prevent spurious fallback for admitted participants
+          getPrivateRoom(roomId).then((latest) => {
+            if (latest && (latest.guest_status === 'admitted' || latest.status === 'active')) {
+              setTimeout(() => {
+                if (!isClosedRef.current && !isUnmountedRef.current) {
+                  connectNegotiationWs(roomId);
+                }
+              }, 800);
+            } else {
+              isClosedRef.current = true;
+              setWsReconnecting(false);
+              navigate(`/private-room?room=${roomId}`, {
+                replace: true,
+                state: { error: 'Access Denied: You must request admission and be admitted by the creator to enter.' },
+              });
+            }
+          }).catch(() => {
+            isClosedRef.current = true;
+            setWsReconnecting(false);
+            navigate(`/private-room?room=${roomId}`, {
+              replace: true,
+              state: { error: 'Access Denied: You must request admission and be admitted by the creator to enter.' },
+            });
           });
           return;
         }
@@ -1067,20 +1088,31 @@ export const NegotiationWorkspace: React.FC = () => {
               }
 
               // Gatekeeping: verify that visitor is either the creator or an admitted participant
-              const myCreatorToken =
-                sessionStorage.getItem(`room_${targetMatterId}_token`) ||
-                localStorage.getItem(`room_${targetMatterId}_token`) ||
-                (localStorage.getItem('negotia_creator_room_id') === targetMatterId ? localStorage.getItem('negotia_creator_room_token') : '');
               const myStoredRole =
                 sessionStorage.getItem(`room_${targetMatterId}_role`) ||
                 localStorage.getItem(`room_${targetMatterId}_role`);
+              const myCreatorToken =
+                (localStorage.getItem('negotia_creator_room_id') === targetMatterId ? localStorage.getItem('negotia_creator_room_token') : '') ||
+                (myStoredRole === 'creator' ? (sessionStorage.getItem(`room_${targetMatterId}_token`) || localStorage.getItem(`room_${targetMatterId}_token`)) : '');
               const myPartToken =
-                (localStorage.getItem('negotia_participant_room_id') === targetMatterId ? localStorage.getItem('negotia_participant_room_token') : '');
+                (localStorage.getItem('negotia_participant_room_id') === targetMatterId ? localStorage.getItem('negotia_participant_room_token') : '') ||
+                (myStoredRole === 'participant' ? (sessionStorage.getItem(`room_${targetMatterId}_token`) || localStorage.getItem(`room_${targetMatterId}_token`)) : '') ||
+                sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+                localStorage.getItem(`room_${targetMatterId}_token`);
 
-              const isCreator = myStoredRole === 'creator' || Boolean(myCreatorToken && r.creator_id);
+              const isCreator = myStoredRole === 'creator' || (myStoredRole !== 'participant' && Boolean(myCreatorToken && r.creator_id));
               const isAdmittedGuest =
                 (r.guest_status === 'admitted' || r.status === 'active') &&
-                (myStoredRole === 'participant' || Boolean(myPartToken));
+                (myStoredRole === 'participant' || Boolean(myPartToken) || Boolean(r.participant_id));
+
+              if (!isCreator && isAdmittedGuest) {
+                localStorage.setItem(`room_${targetMatterId}_role`, 'participant');
+                sessionStorage.setItem(`room_${targetMatterId}_role`, 'participant');
+                if (myPartToken) {
+                  localStorage.setItem(`room_${targetMatterId}_token`, myPartToken);
+                  sessionStorage.setItem(`room_${targetMatterId}_token`, myPartToken);
+                }
+              }
 
               if (!isCreator && !isAdmittedGuest) {
                 // Do not allow direct access just by knowing Room ID
