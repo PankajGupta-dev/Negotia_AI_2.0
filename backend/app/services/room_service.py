@@ -342,6 +342,9 @@ def admit_participant(
     if room.status in ("closed", "expired") or room.closed_at is not None:
         raise ValueError("Cannot admit participants to a closed or expired negotiation room.")
 
+    if room.guest_status == "admitted" and room.status == "active":
+        return room
+
     if not room.participant_id or room.guest_status != "pending_approval":
         raise ValueError("No participant currently waiting for admission approval.")
 

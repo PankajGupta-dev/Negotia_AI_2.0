@@ -201,6 +201,18 @@ export const PrivateRoom: React.FC = () => {
             } else if (detail.guest_status === 'admitted' || detail.status === 'active') {
               setIsWaitingApproval(false);
               setIsAdmittedParticipant(true);
+              const partToken =
+                savedJoinToken ||
+                sessionStorage.getItem(`room_${savedJoinRoomId}_guest_token`) ||
+                sessionStorage.getItem(`room_${savedJoinRoomId}_token`) ||
+                localStorage.getItem(`room_${savedJoinRoomId}_guest_token`) ||
+                '';
+              sessionStorage.setItem(`room_${savedJoinRoomId}_role`, 'participant');
+              sessionStorage.setItem(`room_${savedJoinRoomId}_token`, partToken);
+              sessionStorage.setItem(`room_${savedJoinRoomId}_guest_token`, partToken);
+              localStorage.setItem(`room_${savedJoinRoomId}_guest_token`, partToken);
+              navigate(`/negotiations/${savedJoinRoomId}`);
+              return;
             } else if (detail.guest_status === 'pending_approval') {
               setIsWaitingApproval(true);
               setIsAdmittedParticipant(false);
@@ -262,6 +274,18 @@ export const PrivateRoom: React.FC = () => {
               if (d.guest_status === 'admitted' || d.status === 'active') {
                 setIsWaitingApproval(false);
                 setIsAdmittedParticipant(true);
+                const partToken =
+                  partTok ||
+                  sessionStorage.getItem(`room_${partRoomId}_guest_token`) ||
+                  sessionStorage.getItem(`room_${partRoomId}_token`) ||
+                  localStorage.getItem(`room_${partRoomId}_guest_token`) ||
+                  '';
+                sessionStorage.setItem(`room_${partRoomId}_role`, 'participant');
+                sessionStorage.setItem(`room_${partRoomId}_token`, partToken);
+                sessionStorage.setItem(`room_${partRoomId}_guest_token`, partToken);
+                localStorage.setItem(`room_${partRoomId}_guest_token`, partToken);
+                navigate(`/negotiations/${partRoomId}`);
+                return;
               } else if (d.guest_status === 'rejected') {
                 setIsWaitingApproval(false);
                 setIsAdmittedParticipant(false);
@@ -330,15 +354,18 @@ export const PrivateRoom: React.FC = () => {
           if (detail.guest_status === 'admitted' || detail.status === 'active') {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(true);
-            const savedToken = localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) || localStorage.getItem(`room_${roomId}_token`) || '';
-            localStorage.setItem(STORAGE_PARTICIPANT_ROOM, roomId);
-            if (savedToken) {
-              localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
-              localStorage.setItem(`room_${roomId}_token`, savedToken);
-              sessionStorage.setItem(`room_${roomId}_token`, savedToken);
-            }
-            localStorage.setItem(`room_${roomId}_role`, 'participant');
+            const savedToken =
+              sessionStorage.getItem(`room_${roomId}_guest_token`) ||
+              sessionStorage.getItem(`room_${roomId}_token`) ||
+              localStorage.getItem(`room_${roomId}_guest_token`) ||
+              localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) ||
+              '';
             sessionStorage.setItem(`room_${roomId}_role`, 'participant');
+            sessionStorage.setItem(`room_${roomId}_token`, savedToken);
+            sessionStorage.setItem(`room_${roomId}_guest_token`, savedToken);
+            localStorage.setItem(STORAGE_PARTICIPANT_ROOM, roomId);
+            localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
+            localStorage.setItem(`room_${roomId}_guest_token`, savedToken);
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             navigate(`/negotiations/${roomId}`);
             return;
@@ -386,12 +413,19 @@ export const PrivateRoom: React.FC = () => {
           ) {
             setIsWaitingApproval(false);
             setIsAdmittedParticipant(true);
+            const effToken =
+              token ||
+              sessionStorage.getItem(`room_${targetRoomId}_guest_token`) ||
+              sessionStorage.getItem(`room_${targetRoomId}_token`) ||
+              localStorage.getItem(`room_${targetRoomId}_guest_token`) ||
+              localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) ||
+              '';
             localStorage.setItem(STORAGE_PARTICIPANT_ROOM, targetRoomId);
-            localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, token);
-            localStorage.setItem(`room_${targetRoomId}_role`, 'participant');
-            localStorage.setItem(`room_${targetRoomId}_token`, token);
+            localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, effToken);
+            localStorage.setItem(`room_${targetRoomId}_guest_token`, effToken);
             sessionStorage.setItem(`room_${targetRoomId}_role`, 'participant');
-            sessionStorage.setItem(`room_${targetRoomId}_token`, token);
+            sessionStorage.setItem(`room_${targetRoomId}_token`, effToken);
+            sessionStorage.setItem(`room_${targetRoomId}_guest_token`, effToken);
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
             navigate(`/negotiations/${targetRoomId}`);
           }
@@ -460,6 +494,12 @@ export const PrivateRoom: React.FC = () => {
       localStorage.setItem(STORAGE_CREATOR_ROOM, res.room_id);
       localStorage.setItem(STORAGE_CREATOR_TOKEN, res.creator_token);
       localStorage.setItem(STORAGE_CREATOR_TITLE, roomTitle);
+      localStorage.setItem(`room_${res.room_id}_creator_token`, res.creator_token);
+      sessionStorage.setItem(`room_${res.room_id}_creator_token`, res.creator_token);
+      if (res.creator_id) {
+        localStorage.setItem(`room_${res.room_id}_creator_id`, res.creator_id);
+        sessionStorage.setItem(`room_${res.room_id}_creator_id`, res.creator_id);
+      }
       if (res.passcode) {
         setPasscode(res.passcode);
         localStorage.setItem(STORAGE_CREATOR_PASSCODE, res.passcode);
@@ -468,6 +508,7 @@ export const PrivateRoom: React.FC = () => {
         localStorage.removeItem(STORAGE_CREATOR_PASSCODE);
       }
       localStorage.setItem(STORAGE_ACTIVE_TAB, 'creator');
+      sessionStorage.setItem(STORAGE_ACTIVE_TAB, 'creator');
       setActiveTab('creator');
       localStorage.setItem(`room_${res.room_id}_token`, res.creator_token);
       localStorage.setItem(`room_${res.room_id}_role`, 'creator');
@@ -494,13 +535,36 @@ export const PrivateRoom: React.FC = () => {
     if (!createdRoomId || isAdmitting) return;
     setIsAdmitting(true);
     try {
-      await admitParticipant(createdRoomId, pendingApplicant?.id, creatorToken);
+      const effCreatorToken =
+        creatorToken ||
+        sessionStorage.getItem(`room_${createdRoomId}_creator_token`) ||
+        sessionStorage.getItem(STORAGE_CREATOR_TOKEN) ||
+        localStorage.getItem(STORAGE_CREATOR_TOKEN) ||
+        localStorage.getItem(`room_${createdRoomId}_creator_token`) ||
+        sessionStorage.getItem(`room_${createdRoomId}_token`) ||
+        '';
+      const effCreatorId =
+        roomDetails?.creator_id ||
+        sessionStorage.getItem(`room_${createdRoomId}_creator_id`) ||
+        localStorage.getItem(`room_${createdRoomId}_creator_id`) ||
+        '';
+
+      await admitParticipant(createdRoomId, pendingApplicant?.id, effCreatorToken, effCreatorId);
       setPendingApplicant(null);
 
+      localStorage.setItem(STORAGE_CREATOR_ROOM, createdRoomId);
+      if (effCreatorToken) {
+        localStorage.setItem(STORAGE_CREATOR_TOKEN, effCreatorToken);
+        localStorage.setItem(`room_${createdRoomId}_creator_token`, effCreatorToken);
+        sessionStorage.setItem(`room_${createdRoomId}_creator_token`, effCreatorToken);
+        sessionStorage.setItem(`room_${createdRoomId}_token`, effCreatorToken);
+      }
+      if (effCreatorId) {
+        localStorage.setItem(`room_${createdRoomId}_creator_id`, effCreatorId);
+        sessionStorage.setItem(`room_${createdRoomId}_creator_id`, effCreatorId);
+      }
       localStorage.setItem(`room_${createdRoomId}_role`, 'creator');
-      localStorage.setItem(`room_${createdRoomId}_token`, creatorToken);
       sessionStorage.setItem(`room_${createdRoomId}_role`, 'creator');
-      sessionStorage.setItem(`room_${createdRoomId}_token`, creatorToken);
       navigate(`/negotiations/${createdRoomId}`);
     } catch (err: any) {
       alert(`Failed to admit participant: ${err.message || err}`);
@@ -584,15 +648,27 @@ export const PrivateRoom: React.FC = () => {
       setIsWaitingApproval(true);
       setIsAdmittedParticipant(false);
 
-      // Persist in localStorage so join request survives tab/page switching
+      // Persist in localStorage and sessionStorage with separated keys
       localStorage.setItem(STORAGE_PARTICIPANT_ROOM, cleanId);
       localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, token);
-      localStorage.setItem(STORAGE_ACTIVE_TAB, 'participant');
-      setActiveTab('participant');
-      localStorage.setItem(`room_${cleanId}_token`, token);
-      localStorage.setItem(`room_${cleanId}_role`, 'participant');
+      localStorage.setItem(`room_${cleanId}_guest_token`, token);
+      const guestId = res.guest_id || (res as any).participant_id;
+      if (guestId) {
+        localStorage.setItem(`room_${cleanId}_guest_id`, guestId);
+        sessionStorage.setItem(`room_${cleanId}_guest_id`, guestId);
+      }
+      sessionStorage.setItem(STORAGE_ACTIVE_TAB, 'participant');
       sessionStorage.setItem(`room_${cleanId}_token`, token);
+      sessionStorage.setItem(`room_${cleanId}_guest_token`, token);
       sessionStorage.setItem(`room_${cleanId}_role`, 'participant');
+
+      // Only set generic room keys if not creator of this room
+      if (localStorage.getItem(STORAGE_CREATOR_ROOM) !== cleanId) {
+        localStorage.setItem(STORAGE_ACTIVE_TAB, 'participant');
+        localStorage.setItem(`room_${cleanId}_token`, token);
+        localStorage.setItem(`room_${cleanId}_role`, 'participant');
+      }
+      setActiveTab('participant');
 
       initWebSocket(cleanId, token, 'participant');
       startPolling(cleanId, 'participant');
@@ -929,15 +1005,18 @@ export const PrivateRoom: React.FC = () => {
                   size="md"
                   icon="login"
                   onClick={() => {
-                    const savedToken = localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) || localStorage.getItem(`room_${joinRoomId}_token`) || '';
-                    localStorage.setItem(STORAGE_PARTICIPANT_ROOM, joinRoomId);
-                    if (savedToken) {
-                      localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
-                      localStorage.setItem(`room_${joinRoomId}_token`, savedToken);
-                      sessionStorage.setItem(`room_${joinRoomId}_token`, savedToken);
-                    }
-                    localStorage.setItem(`room_${joinRoomId}_role`, 'participant');
+                    const savedToken =
+                      sessionStorage.getItem(`room_${joinRoomId}_guest_token`) ||
+                      sessionStorage.getItem(`room_${joinRoomId}_token`) ||
+                      localStorage.getItem(`room_${joinRoomId}_guest_token`) ||
+                      localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) ||
+                      '';
                     sessionStorage.setItem(`room_${joinRoomId}_role`, 'participant');
+                    sessionStorage.setItem(`room_${joinRoomId}_token`, savedToken);
+                    sessionStorage.setItem(`room_${joinRoomId}_guest_token`, savedToken);
+                    localStorage.setItem(STORAGE_PARTICIPANT_ROOM, joinRoomId);
+                    localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, savedToken);
+                    localStorage.setItem(`room_${joinRoomId}_guest_token`, savedToken);
                     navigate(`/negotiations/${joinRoomId}`);
                   }}
                 >

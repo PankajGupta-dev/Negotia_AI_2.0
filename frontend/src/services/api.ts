@@ -1045,7 +1045,8 @@ export async function joinPrivateRoom(
 export async function admitParticipant(
   roomId: string,
   participantId?: string,
-  creatorToken?: string
+  creatorToken?: string,
+  creatorId?: string
 ): Promise<any> {
   const cleanId = (roomId || '').trim().toUpperCase();
   return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/admit`, {
@@ -1053,6 +1054,7 @@ export async function admitParticipant(
     headers: creatorToken ? { 'X-Creator-Token': creatorToken } : {},
     body: JSON.stringify({
       creator_token: creatorToken,
+      creator_id: creatorId,
       participant_id: participantId,
     }),
   });

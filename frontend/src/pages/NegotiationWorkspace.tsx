@@ -326,15 +326,27 @@ export const NegotiationWorkspace: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [bilateralEvents]);
 
+  const mySessionRole = sessionStorage.getItem(`room_${targetMatterId}_role`);
+  const hasParticipantToken = Boolean(
+    sessionStorage.getItem(`room_${targetMatterId}_guest_token`) ||
+    localStorage.getItem(`room_${targetMatterId}_guest_token`)
+  );
+  const hasCreatorToken = Boolean(
+    sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+    localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+    localStorage.getItem('negotia_creator_room_token')
+  );
+
   const isExplicitParticipant =
-    sessionStorage.getItem(`room_${targetMatterId}_role`) === 'participant' ||
-    localStorage.getItem(`room_${targetMatterId}_role`) === 'participant' ||
-    localStorage.getItem('negotia_participant_room_id') === targetMatterId ||
+    mySessionRole === 'participant' ||
+    (!mySessionRole && hasParticipantToken && !hasCreatorToken) ||
+    (!mySessionRole && localStorage.getItem(`room_${targetMatterId}_role`) === 'participant' && localStorage.getItem('negotia_creator_room_id') !== targetMatterId) ||
     Boolean(user?.uid && roomDetail?.participant_id && (user.uid === roomDetail.participant_id || user.uid === roomDetail.guest_id));
 
   const isCreatorOfRoom = !isExplicitParticipant && (
-    sessionStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
-    localStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
+    mySessionRole === 'creator' ||
+    sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+    localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
     localStorage.getItem('negotia_creator_room_id') === targetMatterId ||
     Boolean(user?.uid && roomDetail?.creator_id && user.uid === roomDetail.creator_id)
   );
@@ -343,11 +355,19 @@ export const NegotiationWorkspace: React.FC = () => {
   const myPartyLabel = isCreatorOfRoom ? 'Party A (Creator - Buyer)' : 'Party B (Counterparty - Seller)';
   const counterpartyLabel = isCreatorOfRoom ? 'Party B (Counterparty - Seller)' : 'Party A (Creator - Buyer)';
 
-  const effectiveToken =
-    sessionStorage.getItem(`room_${targetMatterId}_token`) ||
-    localStorage.getItem(`room_${targetMatterId}_token`) ||
-    (isCreatorOfRoom ? localStorage.getItem('negotia_creator_room_token') : localStorage.getItem('negotia_participant_room_token')) ||
-    '';
+  const effectiveToken = isCreatorOfRoom
+    ? (sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+       sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+       localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+       localStorage.getItem('negotia_creator_room_token') ||
+       localStorage.getItem(`room_${targetMatterId}_token`) ||
+       '')
+    : (sessionStorage.getItem(`room_${targetMatterId}_guest_token`) ||
+       sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+       localStorage.getItem(`room_${targetMatterId}_guest_token`) ||
+       localStorage.getItem('negotia_participant_room_token') ||
+       localStorage.getItem(`room_${targetMatterId}_token`) ||
+       '');
 
   const [workspaceMode, setWorkspaceMode] = useState<'shared' | 'private'>('shared');
   const [sharedSubTab, setSharedSubTab] = useState<'clauses' | 'proposals' | 'agreed' | 'ai_results'>('clauses');
@@ -612,12 +632,19 @@ export const NegotiationWorkspace: React.FC = () => {
     if (!targetMatterId || isAdmitting) return;
     setIsAdmitting(true);
     const token =
-      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
-      localStorage.getItem(`room_${targetMatterId}_token`) ||
+      sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+      (sessionStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ? sessionStorage.getItem(`room_${targetMatterId}_token`) : '') ||
+      localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
       localStorage.getItem('negotia_creator_room_token') ||
+      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+      '';
+    const creatorId =
+      roomDetail?.creator_id ||
+      sessionStorage.getItem(`room_${targetMatterId}_creator_id`) ||
+      localStorage.getItem(`room_${targetMatterId}_creator_id`) ||
       '';
     try {
-      await admitParticipant(targetMatterId, pendingApplicant?.id, token);
+      await admitParticipant(targetMatterId, pendingApplicant?.id || roomDetail?.participant_id, token, creatorId);
       setPresenceNotice({
         type: 'join',
         text: `${pendingApplicant?.name || 'Participant'} has been admitted to the chamber!`,
@@ -635,6 +662,8 @@ export const NegotiationWorkspace: React.FC = () => {
   const handleRejectApplicant = async () => {
     if (!targetMatterId) return;
     const token =
+      sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+      localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
       sessionStorage.getItem(`room_${targetMatterId}_token`) ||
       localStorage.getItem(`room_${targetMatterId}_token`) ||
       localStorage.getItem('negotia_creator_room_token') ||
@@ -698,12 +727,19 @@ export const NegotiationWorkspace: React.FC = () => {
       wsRef.current = null;
     }
 
-    const token =
-      sessionStorage.getItem(`room_${roomId}_token`) ||
-      localStorage.getItem(`room_${roomId}_token`) ||
-      (localStorage.getItem('negotia_creator_room_id') === roomId ? localStorage.getItem('negotia_creator_room_token') : '') ||
-      (localStorage.getItem('negotia_participant_room_id') === roomId ? localStorage.getItem('negotia_participant_room_token') : '') ||
-      '';
+    const token = isCreatorOfRoom
+      ? (sessionStorage.getItem(`room_${roomId}_creator_token`) ||
+         sessionStorage.getItem(`room_${roomId}_token`) ||
+         localStorage.getItem(`room_${roomId}_creator_token`) ||
+         localStorage.getItem('negotia_creator_room_token') ||
+         localStorage.getItem(`room_${roomId}_token`) ||
+         '')
+      : (sessionStorage.getItem(`room_${roomId}_guest_token`) ||
+         sessionStorage.getItem(`room_${roomId}_token`) ||
+         localStorage.getItem(`room_${roomId}_guest_token`) ||
+         localStorage.getItem('negotia_participant_room_token') ||
+         localStorage.getItem(`room_${roomId}_token`) ||
+         '');
     const myRole = isCreatorOfRoom ? 'creator' : 'participant';
     const wsUrl = getNegotiationWebSocketUrl(roomId, token, myRole);
 
@@ -893,7 +929,7 @@ export const NegotiationWorkspace: React.FC = () => {
                 if (!isClosedRef.current && !isUnmountedRef.current) {
                   connectNegotiationWs(roomId);
                 }
-              }, 800);
+              }, 1200);
             } else {
               isClosedRef.current = true;
               setWsReconnecting(false);
@@ -903,12 +939,20 @@ export const NegotiationWorkspace: React.FC = () => {
               });
             }
           }).catch(() => {
-            isClosedRef.current = true;
-            setWsReconnecting(false);
-            navigate(`/private-room?room=${roomId}`, {
-              replace: true,
-              state: { error: 'Access Denied: You must request admission and be admitted by the creator to enter.' },
-            });
+            if (roomDetail?.status === 'active' || roomDetail?.guest_status === 'admitted') {
+              setTimeout(() => {
+                if (!isClosedRef.current && !isUnmountedRef.current) {
+                  connectNegotiationWs(roomId);
+                }
+              }, 1500);
+            } else {
+              isClosedRef.current = true;
+              setWsReconnecting(false);
+              navigate(`/private-room?room=${roomId}`, {
+                replace: true,
+                state: { error: 'Access Denied: You must request admission and be admitted by the creator to enter.' },
+              });
+            }
           });
           return;
         }
@@ -1088,44 +1132,52 @@ export const NegotiationWorkspace: React.FC = () => {
               }
 
               // Gatekeeping: verify that visitor is either the creator or an admitted participant
-              const myStoredRole =
-                sessionStorage.getItem(`room_${targetMatterId}_role`) ||
-                localStorage.getItem(`room_${targetMatterId}_role`);
-              const myCreatorToken =
-                (localStorage.getItem('negotia_creator_room_id') === targetMatterId ? localStorage.getItem('negotia_creator_room_token') : '') ||
-                (myStoredRole === 'creator' ? (sessionStorage.getItem(`room_${targetMatterId}_token`) || localStorage.getItem(`room_${targetMatterId}_token`)) : '');
-              const myPartToken =
-                (localStorage.getItem('negotia_participant_room_id') === targetMatterId ? localStorage.getItem('negotia_participant_room_token') : '') ||
-                (myStoredRole === 'participant' ? (sessionStorage.getItem(`room_${targetMatterId}_token`) || localStorage.getItem(`room_${targetMatterId}_token`)) : '') ||
-                sessionStorage.getItem(`room_${targetMatterId}_token`) ||
-                localStorage.getItem(`room_${targetMatterId}_token`);
+              const myStoredRole = sessionStorage.getItem(`room_${targetMatterId}_role`);
+              const hasCreatorToken = Boolean(
+                sessionStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+                localStorage.getItem(`room_${targetMatterId}_creator_token`) ||
+                localStorage.getItem('negotia_creator_room_token')
+              );
+              const isCreator =
+                myStoredRole === 'creator' ||
+                (!myStoredRole && hasCreatorToken && (localStorage.getItem('negotia_creator_room_id') === targetMatterId || (user?.uid && r.creator_id && user.uid === r.creator_id)));
 
-              const isCreator = myStoredRole === 'creator' || (myStoredRole !== 'participant' && Boolean(myCreatorToken && r.creator_id));
               const isAdmittedGuest =
-                (r.guest_status === 'admitted' || r.status === 'active') &&
-                (myStoredRole === 'participant' || Boolean(myPartToken) || Boolean(r.participant_id));
+                (r.guest_status === 'admitted' || r.status === 'active') && !isCreator;
 
-              if (!isCreator && isAdmittedGuest) {
-                localStorage.setItem(`room_${targetMatterId}_role`, 'participant');
+              if (isCreator) {
+                sessionStorage.setItem(`room_${targetMatterId}_role`, 'creator');
+              } else if (isAdmittedGuest) {
                 sessionStorage.setItem(`room_${targetMatterId}_role`, 'participant');
-                if (myPartToken) {
-                  localStorage.setItem(`room_${targetMatterId}_token`, myPartToken);
-                  sessionStorage.setItem(`room_${targetMatterId}_token`, myPartToken);
+                const partToken =
+                  sessionStorage.getItem(`room_${targetMatterId}_guest_token`) ||
+                  sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+                  localStorage.getItem(`room_${targetMatterId}_guest_token`) ||
+                  localStorage.getItem('negotia_participant_room_token') ||
+                  '';
+                if (partToken) {
+                  sessionStorage.setItem(`room_${targetMatterId}_token`, partToken);
+                  sessionStorage.setItem(`room_${targetMatterId}_guest_token`, partToken);
                 }
               }
 
               if (!isCreator && !isAdmittedGuest) {
-                // Do not allow direct access just by knowing Room ID
-                navigate(`/private-room?room=${targetMatterId}`, {
-                  replace: true,
-                  state: {
-                    error:
-                      r.guest_status === 'pending_approval'
-                        ? 'Your admission request is awaiting creator approval.'
-                        : 'Access Denied: You must request admission and be admitted by the creator before entering.',
-                  },
-                });
-                return;
+                // If the room is already active or admitted, allow participant without redirection
+                if (r.guest_status === 'admitted' || r.status === 'active') {
+                  sessionStorage.setItem(`room_${targetMatterId}_role`, 'participant');
+                } else {
+                  // Do not allow direct access just by knowing Room ID
+                  navigate(`/private-room?room=${targetMatterId}`, {
+                    replace: true,
+                    state: {
+                      error:
+                        r.guest_status === 'pending_approval'
+                          ? 'Your admission request is awaiting creator approval.'
+                          : 'Access Denied: You must request admission and be admitted by the creator before entering.',
+                    },
+                  });
+                  return;
+                }
               }
             }
           } catch (err: any) {

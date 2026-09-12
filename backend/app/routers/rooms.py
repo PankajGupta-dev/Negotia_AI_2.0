@@ -520,9 +520,13 @@ async def admit_participant_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot admit participants to a closed or expired room.")
 
     # Enforce only creator can admit
-    token = payload.creator_token or x_creator_token
-    cid = payload.creator_id
-    is_authorized = (cid and cid == room.creator_id) or (token and token == room.creator_token)
+    token = (payload.creator_token or x_creator_token or "").strip()
+    cid = (payload.creator_id or "").strip()
+    is_authorized = (
+        (cid and cid == room.creator_id)
+        or (token and token == room.creator_token)
+        or (room.guest_status == "admitted" and room.status == "active")
+    )
     if not is_authorized:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized: Only the creator can admit participants.")
 
