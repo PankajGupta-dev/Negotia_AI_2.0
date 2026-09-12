@@ -36,8 +36,6 @@ def get_mongodb_uri() -> str:
     uri = settings.MONGODB_URI or ""
     if not uri and settings.DATABASE_URL.startswith("mongodb"):
         uri = settings.DATABASE_URL
-    if not uri or not uri.strip():
-        raise RuntimeError("MONGODB_URI is not configured in environment or .env file.")
     return uri.strip()
 
 
@@ -46,11 +44,11 @@ def get_database_name() -> str:
     return settings.MONGODB_DATABASE or "negotia_ai"
 
 
-async def connect_to_mongodb() -> AsyncIOMotorDatabase:
+async def connect_to_mongodb() -> Optional[AsyncIOMotorDatabase]:
     """
     Establish connection to MongoDB Atlas, run ping verification,
     and create required indexes.
-    Fails clearly if connection cannot be established.
+    Fails gracefully to local SQLite fallback if not configured or unreachable.
     """
     global _mongo_client, _mongo_db
 
@@ -58,14 +56,18 @@ async def connect_to_mongodb() -> AsyncIOMotorDatabase:
         return _mongo_db
 
     uri = get_mongodb_uri()
+    if not uri:
+        logger.info("[MONGODB] MONGODB_URI is not configured. Backend running with local SQLite storage.")
+        return None
+
     db_name = get_database_name()
 
     try:
         logger.info(f"[MONGODB] Connecting to MongoDB Atlas database '{db_name}'...")
         _mongo_client = AsyncIOMotorClient(
             uri,
-            serverSelectionTimeoutMS=8000,
-            connectTimeoutMS=8000,
+            serverSelectionTimeoutMS=5000,
+            connectTimeoutMS=5000,
             maxPoolSize=50,
             minPoolSize=5,
         )
@@ -82,8 +84,8 @@ async def connect_to_mongodb() -> AsyncIOMotorDatabase:
     except Exception as ex:
         _mongo_client = None
         _mongo_db = None
-        logger.error(f"[MONGODB] Failed to connect to MongoDB Atlas: {str(ex)}")
-        raise RuntimeError(f"MongoDB connection failed: {str(ex)}") from ex
+        logger.warning(f"[MONGODB] Failed to connect to MongoDB Atlas: {str(ex)}. Continuing with local SQLite storage.")
+        return None
 
 
 async def close_mongodb_connection() -> None:

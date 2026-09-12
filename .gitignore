@@ -55,3 +55,4 @@ negotiadb.sqlite3
 uploads/
 backend/uploads/
 
+backend/negotiadb.sqlite*
