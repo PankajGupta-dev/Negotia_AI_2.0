@@ -225,6 +225,20 @@ def sync_room_to_mongo(room_dict: Dict[str, Any]) -> None:
 
         db = get_sync_mongo_db()
         if db is not None:
+            existing = db[COLLECTION_ROOMS].find_one({"room_id": clean_id})
+            if existing:
+                # Merge messages so neither laptop wipes out the other's messages
+                existing_msgs = existing.get("messages") or []
+                new_msgs = payload.get("messages") or []
+                msg_map = {}
+                for m in existing_msgs:
+                    k = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}_{m.get('sender_id')}"
+                    msg_map[k] = m
+                for m in new_msgs:
+                    k = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}_{m.get('sender_id')}"
+                    msg_map[k] = m
+                # Sort by timestamp
+                payload["messages"] = sorted(list(msg_map.values()), key=lambda x: x.get("timestamp") or "")
             db[COLLECTION_ROOMS].replace_one({"room_id": clean_id}, payload, upsert=True)
     except Exception as ex:
         logger.debug(f"[MONGODB] sync_room_to_mongo error: {ex}")

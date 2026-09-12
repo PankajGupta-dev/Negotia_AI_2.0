@@ -44,6 +44,26 @@ const formatMessageTime = (rawTs?: string | number): string => {
   }
 };
 
+const resolveSenderName = (rawName?: string, rawRole?: string): string => {
+  const r = (rawRole || '').toLowerCase();
+  const clean = (rawName || '').trim();
+  const lower = clean.toLowerCase();
+  if (
+    !clean ||
+    lower.includes('negotiation demo') ||
+    lower.startsWith('counsel') ||
+    lower.startsWith('counterparty') ||
+    lower === 'guest user' ||
+    lower === 'participant'
+  ) {
+    if (r === 'seller' || lower.includes('seller')) {
+      return 'Marcus Vance (Seller)';
+    }
+    return 'Elena Rostova (Buyer)';
+  }
+  return clean;
+};
+
 interface BilateralRoomEvent {
   id?: string;
   type: 'join' | 'leave' | 'message' | 'clause_submitted' | 'proposal' | 'room_closed' | 'system' | string;
@@ -251,7 +271,7 @@ export const NegotiationWorkspace: React.FC = () => {
     };
 
     fetchRoom();
-    timer = setInterval(fetchRoom, 2500);
+    timer = setInterval(fetchRoom, 1200);
     return () => clearInterval(timer);
   }, [targetMatterId]);
 
@@ -294,11 +314,18 @@ export const NegotiationWorkspace: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [bilateralEvents]);
 
-  const isCreatorOfRoom =
+  const isExplicitParticipant =
+    sessionStorage.getItem(`room_${targetMatterId}_role`) === 'participant' ||
+    localStorage.getItem(`room_${targetMatterId}_role`) === 'participant' ||
+    localStorage.getItem('negotia_participant_room_id') === targetMatterId ||
+    Boolean(user?.uid && roomDetail?.participant_id && (user.uid === roomDetail.participant_id || user.uid === roomDetail.guest_id));
+
+  const isCreatorOfRoom = !isExplicitParticipant && (
     sessionStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
     localStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
     localStorage.getItem('negotia_creator_room_id') === targetMatterId ||
-    (roomDetail?.creator_id && user && (roomDetail.creator_id === user.uid || roomDetail.creator_name === user.name));
+    Boolean(user?.uid && roomDetail?.creator_id && user.uid === roomDetail.creator_id)
+  );
 
   const displayCapacity = wsConnected ? Math.max(1, activePartyCount) : activePartyCount;
 
@@ -617,10 +644,17 @@ export const NegotiationWorkspace: React.FC = () => {
     const cleanText = chatInput.trim();
     if (!cleanText) return;
 
-    const myRole = isCreatorOfRoom ? 'buyer' : 'seller';
-    const myName = isCreatorOfRoom
-      ? (roomDetail?.creator_name || user?.name || 'Negotiation Demo (Buyer)')
-      : (roomDetail?.guest_name || user?.name || 'Negotiation Demo (Seller)');
+    const myRole = (isCreatorOfRoom
+      ? (roomDetail?.creator_role || 'buyer')
+      : (roomDetail?.guest_role || 'seller')).toLowerCase();
+
+    const cleanUser = (user?.name || '').replace(/\s*\((buyer|seller)\)/gi, '').trim();
+    const isDemo = !cleanUser || cleanUser.toLowerCase().includes('negotiation demo') || cleanUser === 'Guest User';
+    const myName = !isDemo
+      ? `${cleanUser} (${myRole === 'buyer' ? 'Buyer' : 'Seller'})`
+      : myRole === 'buyer'
+      ? 'Elena Rostova (Buyer)'
+      : 'Marcus Vance (Seller)';
     const myId = isCreatorOfRoom ? roomDetail?.creator_id : (roomDetail?.participant_id || roomDetail?.guest_id);
 
     const token =
@@ -632,11 +666,12 @@ export const NegotiationWorkspace: React.FC = () => {
 
     setChatInput('');
 
-    // Optimistically add to local feed if not already present
+    const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const tempNow = new Date().toISOString();
     setBilateralEvents((prev) => [
       ...prev,
       {
+        id: msgId,
         type: 'message',
         sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
         sender_name: myName,
@@ -646,31 +681,39 @@ export const NegotiationWorkspace: React.FC = () => {
       },
     ]);
 
-    // Send over WebSocket if connected
+    let wsSent = false;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       try {
         wsRef.current.send(
           JSON.stringify({
+            id: msgId,
             type: 'message',
             text: cleanText,
+            sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
+            sender_name: myName,
+            sender_role: myRole,
           })
         );
+        wsSent = true;
       } catch (err) {
-        console.warn('WS send failed, relying on REST fallback', err);
+        console.warn('WS send failed, falling back to REST', err);
       }
     }
 
-    // Always persist to backend via REST to ensure MongoDB & SQLite consistency across laptops
-    try {
-      await sendRoomMessage(targetMatterId, {
-        text: cleanText,
-        sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
-        sender_name: myName,
-        sender_role: myRole,
-        token: token,
-      });
-    } catch (err) {
-      console.warn('REST message persist notice:', err);
+    // If WebSocket wasn't open, use REST API fallback so the message is always delivered
+    if (!wsSent) {
+      try {
+        await sendRoomMessage(targetMatterId, {
+          id: msgId,
+          text: cleanText,
+          sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
+          sender_name: myName,
+          sender_role: myRole,
+          token: token,
+        });
+      } catch (err) {
+        console.warn('REST message persist notice:', err);
+      }
     }
   };
 
@@ -1600,7 +1643,7 @@ export const NegotiationWorkspace: React.FC = () => {
                           <div key={idx} className="p-2.5 rounded-lg border border-[#FCD34D] bg-[#FEF3C7] space-y-1 shadow-xs">
                             <div className="flex items-center justify-between text-[10px] font-mono text-[#92400E] font-bold">
                               <span>PROPOSAL: {evt.clause_id}</span>
-                              <span>{evt.sender_name}</span>
+                              <span>{resolveSenderName(evt.sender_name, evt.sender_role)}</span>
                             </div>
                             <p className="text-xs font-serif italic text-[#1C1917]">
                               "{evt.proposal || evt.text}"
@@ -1609,14 +1652,29 @@ export const NegotiationWorkspace: React.FC = () => {
                         );
                       }
 
+                      if (evt.type === 'system') {
+                        const cleanText = (evt.text || '')
+                          .replace(/Participant Negotiation Demo \(Seller\) was admitted/gi, 'Participant Marcus Vance (Seller) was admitted')
+                          .replace(/Participant Negotiation Demo was admitted/gi, 'Participant Marcus Vance (Seller) was admitted')
+                          .replace(/Negotiation Demo \(Seller\)/gi, 'Marcus Vance (Seller)')
+                          .replace(/Negotiation Demo \(Buyer\)/gi, 'Elena Rostova (Buyer)')
+                          .replace(/Negotiation Demo/gi, 'Marcus Vance (Seller)');
+                        return (
+                          <div key={idx} className="p-2.5 rounded bg-[#EDE7DC] border border-[#D6CEBE] text-center space-y-1 my-1">
+                            <p className="font-mono text-[11px] font-semibold text-[#44403C]">
+                              {cleanText}
+                            </p>
+                          </div>
+                        );
+                      }
+
                       // Default 'message'
-                      const myRole = isCreatorOfRoom ? 'buyer' : 'seller';
+                      const myRole = (isCreatorOfRoom
+                        ? (roomDetail?.creator_role || 'buyer')
+                        : (roomDetail?.guest_role || 'seller')).toLowerCase();
                       const isOwn =
                         (evt.sender_role && evt.sender_role.toLowerCase() === myRole) ||
-                        (evt.sender_id && evt.sender_id === (isCreatorOfRoom ? roomDetail?.creator_id : (roomDetail?.participant_id || roomDetail?.guest_id))) ||
-                        (isCreatorOfRoom
-                          ? (evt.sender_name?.toLowerCase().includes('buyer') ?? false)
-                          : (evt.sender_name?.toLowerCase().includes('seller') ?? false));
+                        (evt.sender_id && evt.sender_id === (isCreatorOfRoom ? roomDetail?.creator_id : (roomDetail?.participant_id || roomDetail?.guest_id)));
 
                       return (
                         <div
@@ -1626,7 +1684,7 @@ export const NegotiationWorkspace: React.FC = () => {
                           }`}
                         >
                           <div className="flex items-center gap-1 text-[10px] font-mono text-[#78716C] mb-0.5">
-                            <span className="font-semibold">{evt.sender_name || (isOwn ? 'You' : 'Counterparty Counsel')}</span>
+                            <span className="font-semibold">{resolveSenderName(evt.sender_name, evt.sender_role)}</span>
                             <span>•</span>
                             <span>{formatMessageTime(evt.timestamp)}</span>
                           </div>

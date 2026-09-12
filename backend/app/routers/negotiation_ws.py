@@ -59,6 +59,7 @@ class NegotiationConnectionRegistry:
     def __init__(self):
         # room_id -> list of socket entries: [{"conn_id": str, "participant_id": str, "ws": WebSocket}]
         self._rooms: Dict[str, List[Dict[str, Any]]] = {}
+        self._sync_tasks: Dict[str, asyncio.Task] = {}
         self._lock = asyncio.Lock()
 
     async def register(self, room_id: str, participant_id: str, websocket: WebSocket) -> bool:
@@ -95,7 +96,67 @@ class NegotiationConnectionRegistry:
                 "ws": websocket,
             })
             logger.info(f"[NegotiationWS {room_id}] Participant '{participant_id}' connected (conn: {conn_id}). Total sockets: {len(self._rooms[room_id])}")
-            return True
+
+        # Start background MongoDB cross-laptop sync worker if not running
+        if room_id not in self._sync_tasks or self._sync_tasks[room_id].done():
+            self._sync_tasks[room_id] = asyncio.create_task(self._sync_mongo_worker(room_id))
+
+        return True
+
+    async def _sync_mongo_worker(self, room_id: str):
+        """Cross-laptop real-time sync via MongoDB Atlas (fully async Motor)."""
+        from app.db.database import get_mongo_db, COLLECTION_ROOMS
+        seen_msg_ids = set()
+        try:
+            mongo_db = get_mongo_db()
+            init_doc = await mongo_db[COLLECTION_ROOMS].find_one({"room_id": room_id}, {"_id": 0})
+            if init_doc and init_doc.get("messages"):
+                for m in init_doc["messages"]:
+                    mid = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}"
+                    seen_msg_ids.add(mid)
+        except Exception:
+            pass
+
+        while True:
+            try:
+                await asyncio.sleep(1.5)
+                async with self._lock:
+                    has_active = bool(self._rooms.get(room_id))
+                if not has_active:
+                    break
+
+                try:
+                    mongo_db = get_mongo_db()
+                    doc = await mongo_db[COLLECTION_ROOMS].find_one({"room_id": room_id}, {"_id": 0})
+                except Exception:
+                    doc = None
+
+                if doc and doc.get("messages"):
+                    for m in doc["messages"]:
+                        mid = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}"
+                        if mid not in seen_msg_ids:
+                            seen_msg_ids.add(mid)
+                            # Sync into local SQLite
+                            try:
+                                with SessionLocal() as db:
+                                    r = db.query(NegotiationRoomDB).filter(
+                                        (func.upper(NegotiationRoomDB.room_id) == room_id) | (func.upper(NegotiationRoomDB.id) == room_id)
+                                    ).first()
+                                    if r:
+                                        msgs = list(r.messages or [])
+                                        if not any(x.get("id") == m.get("id") and m.get("id") for x in msgs):
+                                            msgs.append(m)
+                                            r.messages = msgs
+                                            flag_modified(r, "messages")
+                                            db.commit()
+                            except Exception:
+                                pass
+                            # Broadcast this cross-laptop message to all locally connected sockets!
+                            await self.broadcast(room_id, m)
+            except asyncio.CancelledError:
+                break
+            except Exception as ex:
+                logger.debug(f"[NegotiationWS {room_id}] Mongo sync worker warning: {ex}")
 
     async def unregister(self, room_id: str, websocket: WebSocket):
         """Unregister specific socket on leave or disconnect."""
@@ -208,9 +269,8 @@ async def negotiation_websocket_endpoint(
     """
     clean_room_id = (room_id or "").strip().upper()
     with SessionLocal() as db:
-        room = db.query(NegotiationRoomDB).filter(
-            (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
-        ).first()
+        from app.services.room_service import get_room as svc_get_room
+        room = svc_get_room(db, clean_room_id)
 
         if not room:
             await websocket.accept()
@@ -256,14 +316,20 @@ async def negotiation_websocket_endpoint(
             pid = room.creator_id or "creator"
             creator_r = (room.creator_role or "buyer").lower()
             sender_role = "buyer" if creator_r == "buyer" else "seller"
-            raw_cname = (room.creator_name or "Negotiation Demo").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
-            sender_name = f"{raw_cname} ({sender_role})"
+            raw_cname = (room.creator_name or "").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
+            if not raw_cname or "negotiation demo" in raw_cname.lower():
+                sender_name = "Elena Rostova (Buyer)" if sender_role == "buyer" else "Marcus Vance (Seller)"
+            else:
+                sender_name = f"{raw_cname} ({sender_role.capitalize()})"
         else:
             pid = room.participant_id or room.guest_id or "seller_guest"
             creator_r = (room.creator_role or "buyer").lower()
             sender_role = "seller" if creator_r == "buyer" else "buyer"
-            raw_gname = (room.guest_name or "Negotiation Demo").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
-            sender_name = f"{raw_gname} ({sender_role})"
+            raw_gname = (room.guest_name or "").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
+            if not raw_gname or "negotiation demo" in raw_gname.lower():
+                sender_name = "Marcus Vance (Seller)" if sender_role == "seller" else "Elena Rostova (Buyer)"
+            else:
+                sender_name = f"{raw_gname} ({sender_role.capitalize()})"
 
     # Connect to in-memory registry (enforces max 2 active participants)
     registered = await registry.register(clean_room_id, pid, websocket)
@@ -296,10 +362,27 @@ async def negotiation_websocket_endpoint(
     # Send recent message history to the newly connected participant
     try:
         existing_messages = list(room.messages or [])
-        if existing_messages:
+        clean_history = []
+        for m in existing_messages[-100:]:
+            mc = dict(m)
+            m_sname = str(mc.get("sender_name") or "")
+            m_srole = str(mc.get("sender_role") or "").lower()
+            if not m_sname or "negotiation demo" in m_sname.lower() or m_sname.startswith("Counsel") or m_sname.startswith("Counterparty"):
+                mc["sender_name"] = "Marcus Vance (Seller)" if (m_srole == "seller" or "seller" in m_sname.lower()) else "Elena Rostova (Buyer)"
+            if mc.get("type") == "system" and "text" in mc:
+                mc["text"] = (
+                    str(mc["text"])
+                    .replace("Negotiation Demo (Seller)", "Marcus Vance (Seller)")
+                    .replace("Negotiation Demo (Buyer)", "Elena Rostova (Buyer)")
+                    .replace("Participant Negotiation Demo was admitted", "Participant Marcus Vance (Seller) was admitted")
+                    .replace("Negotiation Demo", "Participant Marcus Vance (Seller)")
+                )
+            clean_history.append(mc)
+
+        if clean_history:
             await websocket.send_json({
                 "type": "history",
-                "messages": existing_messages[-100:],
+                "messages": clean_history,
                 "timestamp": datetime.utcnow().isoformat() + "Z",
             })
     except Exception as ex:
