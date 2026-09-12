@@ -30,16 +30,13 @@ export interface IntakeContextType {
   resetIntake: () => void;
 }
 
-const DEFAULT_DOC_A = 'Apex_Enterprise_Master_Services_Agreement_2025.docx';
-const DEFAULT_DOC_B = 'Apex_Dynamics_Inbound_Redline_Round3.docx';
-
 const IntakeContext = createContext<IntakeContextType | undefined>(undefined);
 
 export const IntakeProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
   const [fileA, setFileAState] = useState<File | null>(null);
   const [fileB, setFileBState] = useState<File | null>(null);
-  const [docAFile, setDocAFile] = useState<string | null>(DEFAULT_DOC_A);
-  const [docBFile, setDocBFile] = useState<string | null>(DEFAULT_DOC_B);
+  const [docAFile, setDocAFile] = useState<string | null>(null);
+  const [docBFile, setDocBFile] = useState<string | null>(null);
   const [fileASize, setFileASize] = useState<number | null>(null);
   const [fileBSize, setFileBSize] = useState<number | null>(null);
   const [matterId, setMatterId] = useState<string>(
@@ -58,6 +55,9 @@ export const IntakeProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (file) {
       setDocAFile(file.name);
       setFileASize(file.size);
+    } else {
+      setDocAFile(null);
+      setFileASize(null);
     }
   };
 
@@ -66,14 +66,17 @@ export const IntakeProvider: React.FC<{ children: ReactNode }> = ({ children }) 
     if (file) {
       setDocBFile(file.name);
       setFileBSize(file.size);
+    } else {
+      setDocBFile(null);
+      setFileBSize(null);
     }
   };
 
   const resetIntake = () => {
     setFileAState(null);
     setFileBState(null);
-    setDocAFile(DEFAULT_DOC_A);
-    setDocBFile(DEFAULT_DOC_B);
+    setDocAFile(null);
+    setDocBFile(null);
     setFileASize(null);
     setFileBSize(null);
     setMatterId(`2025-INT-${Math.floor(1000 + Math.random() * 9000)}`);

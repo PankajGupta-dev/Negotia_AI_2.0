@@ -54,7 +54,6 @@ export const Intake: React.FC = () => {
     setFileB,
     setDocAFile,
     setDocBFile,
-    setVarianceSlider,
     setIsUploaded,
     resetIntake,
   } = useIntake();
@@ -183,47 +182,49 @@ export const Intake: React.FC = () => {
   };
 
   return (
-    <div className="w-full bg-[#F5F1E8] text-[#1C1917] p-space-base md:p-space-lg lg:p-space-xl min-h-screen selection:bg-primary-container selection:text-on-primary-container">
-      {/* Background Parchment Grid */}
-      <div className="max-w-7xl mx-auto space-y-space-lg">
-        {/* 1. HEADER — PDF Title Display */}
-        <header className="bg-[#FAF7F2] border border-[#D6CEBE] p-space-md rounded shadow-sm">
+    <div className="w-full min-h-screen bg-[#F5F1E8] text-[#1C1917] p-4 md:p-6 lg:p-8 flex items-center justify-center">
+      <div className="w-full max-w-4xl space-y-6">
+        {/* 1. ELEGANT COMPACT HEADER */}
+        <header className="bg-[#FAF7F2] border border-[#D6CEBE] p-5 rounded-xl shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <WaxSealLogo size={28} />
+            <WaxSealLogo size={32} />
             <div className="min-w-0">
-              <h1 className="font-headline-xl text-2xl md:text-3xl text-[#1C1917] tracking-tight font-semibold truncate">
+              <div className="flex items-center gap-2 font-mono uppercase text-[10px] tracking-wider text-[#78716C]">
+                <span className="w-2 h-2 rounded-full bg-[#D97706] animate-pulse" />
+                <span>Bilateral Document Intake</span>
+                <span>•</span>
+                <span>{matterId}</span>
+              </div>
+              <h1 className="font-headline-xl text-xl md:text-2xl text-[#1C1917] tracking-tight font-bold truncate">
                 {docAFile
                   ? docAFile.replace(/\.[^/.]+$/, '')
-                  : 'Contract Intake & Bilateral Ingestion'}
+                  : 'Contract Intake & Conflict Analysis'}
               </h1>
-              {docAFile && (
-                <p className="font-mono text-xs text-[#78716C] mt-0.5">
-                  {docBFile ? `Party A: ${docAFile} · Party B: ${docBFile}` : `Party A: ${docAFile}`}
-                </p>
-              )}
             </div>
           </div>
+          <span className="font-mono text-[10px] bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] px-2.5 py-1 rounded font-bold uppercase shrink-0 self-start sm:self-auto">
+            Dual Ingestion Mode
+          </span>
         </header>
 
-        {/* 2. DUAL DOCUMENT DROP ZONES */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-space-lg">
+        {/* 2. COMPACT DUAL DOCUMENT DROP ZONES */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* DOCUMENT A (Baseline) */}
-          <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded p-space-lg space-y-space-md shadow-sm">
-            <div className="flex items-center justify-between pb-space-xs border-b border-[#D6CEBE]">
+          <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded-xl p-5 space-y-3 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE]">
               <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded bg-[#1C1917] text-[#FAF7F2] flex items-center justify-center font-mono text-xs font-bold">
+                <span className="w-5 h-5 rounded bg-[#1C1917] text-[#FAF7F2] flex items-center justify-center font-mono text-[10px] font-bold">
                   A
                 </span>
-                <span className="font-headline-md text-lg text-[#1C1917] font-semibold">
-                  Primary Operative Agreement (Firm Baseline)
+                <span className="font-semibold text-sm text-[#1C1917]">
+                  Primary Baseline (Party A)
                 </span>
               </div>
-              <span className="font-mono text-[10px] text-[#166534] bg-[#DCFCE7] px-2 py-0.5 rounded uppercase font-semibold">
-                Approved Playbook
+              <span className="font-mono text-[10px] text-[#166534] bg-[#DCFCE7] px-2 py-0.5 rounded font-semibold uppercase">
+                Baseline Draft
               </span>
             </div>
 
-            {/* Hidden native file input */}
             <input
               type="file"
               ref={fileInputARef}
@@ -232,64 +233,62 @@ export const Intake: React.FC = () => {
               className="hidden"
             />
 
-            {/* Drop zone A */}
             <div
               onClick={() => canUploadBaseline && fileInputARef.current?.click()}
               onDragOver={(e) => { if (canUploadBaseline) e.preventDefault(); }}
               onDrop={(e) => { if (canUploadBaseline) handleDropA(e); }}
               title={!canUploadBaseline ? 'Only Buyer (Party A) can upload the baseline agreement' : undefined}
-              className={`border-2 border-dashed rounded p-space-lg text-center transition-colors space-y-2 ${
+              className={`border-2 border-dashed rounded-lg p-5 text-center transition-all space-y-2.5 ${
                 canUploadBaseline
-                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/40 cursor-pointer'
+                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/30 hover:bg-[#EDE7DC]/60 cursor-pointer'
                   : 'border-[#D6CEBE]/40 bg-[#EDE7DC]/20 cursor-not-allowed opacity-60'
               }`}
             >
               {!canUploadBaseline && (
-                <div className="flex items-center justify-center gap-2 text-[#991B1B] font-mono text-[11px] uppercase font-bold tracking-wider pb-1">
-                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                <div className="flex items-center justify-center gap-1.5 text-[#991B1B] font-mono text-[10px] uppercase font-bold tracking-wider">
+                  <span className="material-symbols-outlined text-[16px]">lock</span>
                   Restricted to Buyer Role
                 </div>
               )}
-              <span className="material-symbols-outlined text-4xl text-[#D97706]">description</span>
-              <div className="font-headline-md text-base font-semibold text-[#1C1917]">
-                {docAFile || 'Drag & Drop Baseline Agreement (.DOCX, .PDF, .TXT)'}
+              <span className="material-symbols-outlined text-3xl text-[#D97706]">description</span>
+              <div>
+                <div className="font-semibold text-sm text-[#1C1917] truncate">
+                  {docAFile || 'Upload Party A Baseline'}
+                </div>
+                <p className="font-mono text-[11px] text-[#78716C] mt-1">
+                  {fileA
+                    ? `${(fileA.size / 1024).toFixed(1)} KB · Ready`
+                    : docAFile
+                    ? `Uploaded: ${docAFile}`
+                    : 'Click or drag (.PDF, .DOCX, .TXT)'}
+                </p>
               </div>
-              <p className="font-mono text-xs text-[#78716C]">
-                {fileA
-                  ? `${(fileA.size / 1024).toFixed(1)} KB · Selected File · Ready for Upload`
-                  : docAFile
-                  ? 'Standard Baseline · 42 Clauses · Cryptographically Ready'
-                  : 'Supports tracked changes & comments'}
-              </p>
               {canUploadBaseline && (
-                <div className="pt-2">
-                  <span className="px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors">
-                    {docAFile ? 'Replace File' : 'Browse File'}
+                <div className="pt-1">
+                  <span className="inline-block px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors shadow-2xs">
+                    {docAFile ? 'Replace File' : 'Select File'}
                   </span>
                 </div>
               )}
             </div>
-
-
           </div>
 
-          {/* DOCUMENT B (Counterparty Inbound) */}
-          <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded p-space-lg space-y-space-md shadow-sm">
-            <div className="flex items-center justify-between pb-space-xs border-b border-[#D6CEBE]">
+          {/* DOCUMENT B (Counterparty Markup) */}
+          <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded-xl p-5 space-y-3 shadow-xs flex flex-col justify-between">
+            <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE]">
               <div className="flex items-center gap-2">
-                <span className="w-6 h-6 rounded bg-[#D97706] text-white flex items-center justify-center font-mono text-xs font-bold">
+                <span className="w-5 h-5 rounded bg-[#D97706] text-white flex items-center justify-center font-mono text-[10px] font-bold">
                   B
                 </span>
-                <span className="font-headline-md text-lg text-[#1C1917] font-semibold">
-                  Inbound Counterparty Markup / Turn
+                <span className="font-semibold text-sm text-[#1C1917]">
+                  Counterparty Markup (Party B)
                 </span>
               </div>
-              <span className="font-mono text-[10px] text-[#991B1B] bg-[#FEE2E2] px-2 py-0.5 rounded uppercase font-semibold">
-                Redlines Detected
+              <span className="font-mono text-[10px] text-[#D97706] bg-[#FEF3C7] px-2 py-0.5 rounded font-semibold uppercase">
+                Redline Turn
               </span>
             </div>
 
-            {/* Hidden native file input */}
             <input
               type="file"
               ref={fileInputBRef}
@@ -298,119 +297,64 @@ export const Intake: React.FC = () => {
               className="hidden"
             />
 
-            {/* Drop zone B */}
             <div
               onClick={() => canUploadRedline && fileInputBRef.current?.click()}
               onDragOver={(e) => { if (canUploadRedline) e.preventDefault(); }}
               onDrop={(e) => { if (canUploadRedline) handleDropB(e); }}
               title={!canUploadRedline ? 'Only Seller (Party B) can upload the counterparty redline' : undefined}
-              className={`border-2 border-dashed rounded p-space-lg text-center transition-colors space-y-2 ${
+              className={`border-2 border-dashed rounded-lg p-5 text-center transition-all space-y-2.5 ${
                 canUploadRedline
-                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/40 cursor-pointer'
+                  ? 'border-[#D6CEBE] hover:border-[#D97706] bg-[#EDE7DC]/30 hover:bg-[#EDE7DC]/60 cursor-pointer'
                   : 'border-[#D6CEBE]/40 bg-[#EDE7DC]/20 cursor-not-allowed opacity-60'
               }`}
             >
               {!canUploadRedline && (
-                <div className="flex items-center justify-center gap-2 text-[#991B1B] font-mono text-[11px] uppercase font-bold tracking-wider pb-1">
-                  <span className="material-symbols-outlined text-[18px]">lock</span>
+                <div className="flex items-center justify-center gap-1.5 text-[#991B1B] font-mono text-[10px] uppercase font-bold tracking-wider">
+                  <span className="material-symbols-outlined text-[16px]">lock</span>
                   Restricted to Seller Role
                 </div>
               )}
-              <span className="material-symbols-outlined text-4xl text-[#991B1B]">difference</span>
-              <div className="font-headline-md text-base font-semibold text-[#1C1917]">
-                {docBFile || 'Drag & Drop Counterparty Markup (.DOCX, .PDF, .TXT)'}
+              <span className="material-symbols-outlined text-3xl text-[#991B1B]">difference</span>
+              <div>
+                <div className="font-semibold text-sm text-[#1C1917] truncate">
+                  {docBFile || 'Upload Party B Markup'}
+                </div>
+                <p className="font-mono text-[11px] text-[#78716C] mt-1">
+                  {fileB
+                    ? `${(fileB.size / 1024).toFixed(1)} KB · Ready`
+                    : docBFile
+                    ? `Uploaded: ${docBFile}`
+                    : 'Click or drag (.PDF, .DOCX, .TXT)'}
+                </p>
               </div>
-              <p className="font-mono text-xs text-[#78716C]">
-                {fileB
-                  ? `${(fileB.size / 1024).toFixed(1)} KB · Selected File · Ready for Upload`
-                  : docBFile
-                  ? 'Inbound Redline · 18 Inline Changes · Ready for Ingest'
-                  : 'Word redlines or scanned execution draft'}
-              </p>
-              <div className="pt-2">
-                <span className="px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors">
-                  {docBFile ? 'Replace File' : 'Browse File'}
-                </span>
-              </div>
-            </div>
-
-
-          </div>
-        </div>
-
-        {/* 3. INTAKE CONFIGURATION & CONCESSION RULES */}
-        <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded p-space-lg space-y-space-md shadow-sm">
-          <div className="flex items-center justify-between pb-space-xs border-b border-[#D6CEBE]">
-            <div className="flex items-center gap-2">
-              <span className="material-symbols-outlined text-[#D97706] text-xl">tune</span>
-              <h2 className="font-headline-md text-xl text-[#1C1917] font-semibold">
-                Autonomous Concession Steerability & Deliberation Limits
-              </h2>
-            </div>
-            <span className="font-mono text-[11px] text-[#D97706] bg-[#FEF3C7] px-2.5 py-1 rounded border border-[#FCD34D] font-bold">
-              {varianceSlider}% Variance Allowed
-            </span>
-          </div>
-
-          <div className="space-y-space-sm">
-            <div className="flex items-center justify-between text-xs text-[#78716C] font-mono">
-              <span>0% (Strict Playbook Fidelity - Zero Concession)</span>
-              <span>18.5% (Moderate Enterprise Stance)</span>
-              <span>35% (Aggressive Velocity)</span>
-            </div>
-            <input
-              type="range"
-              min="0"
-              max="50"
-              step="0.5"
-              value={varianceSlider}
-              onChange={(e) => setVarianceSlider(parseFloat(e.target.value))}
-              className="w-full h-2 bg-[#D6CEBE] rounded appearance-none cursor-pointer accent-[#D97706]"
-            />
-            <p className="font-body-md text-xs text-[#57534E] leading-relaxed">
-              At <strong>{varianceSlider}% variance</strong>, Negotia AI is authorized to trade payment terms
-              (Net 45-60) and 2.0x ARR liability super-caps against counterparty IP indemnity carve-outs without requiring partner escalation.
-            </p>
-          </div>
-
-          {/* Verification Pipeline Checks */}
-          <div className="pt-space-sm border-t border-[#D6CEBE] grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-space-sm font-mono text-xs">
-            <div className="flex items-center gap-2 text-[#166534]">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
-              <span>AST Redline Diff Engine Ready</span>
-            </div>
-            <div className="flex items-center gap-2 text-[#166534]">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
-              <span>48,000+ SEC EDGAR Precedents Indexed</span>
-            </div>
-            <div className="flex items-center gap-2 text-[#166534]">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
-              <span>Hardware MFA Signer Active</span>
-            </div>
-            <div className="flex items-center gap-2 text-[#166534]">
-              <span className="material-symbols-outlined text-sm">check_circle</span>
-              <span>Cryptographic Provenance Hash Ready</span>
+              {canUploadRedline && (
+                <div className="pt-1">
+                  <span className="inline-block px-3 py-1 bg-[#FAF7F2] border border-[#D6CEBE] rounded text-xs font-medium text-[#1C1917] hover:bg-[#EDE7DC] transition-colors shadow-2xs">
+                    {docBFile ? 'Replace File' : 'Select File'}
+                  </span>
+                </div>
+              )}
             </div>
           </div>
         </div>
 
-        {/* 4. PROCESSING OVERLAY / INITIATE CTA */}
+        {/* 3. PROCESSING PROGRESS OVERLAY */}
         {isProcessing && (
-          <div className="bg-[#FAF7F2] border-2 border-[#D97706] rounded p-space-lg space-y-space-sm shadow-md animate-fade-in">
-            <div className="flex items-center justify-between text-sm">
-              <span className="font-mono font-bold text-[#D97706] uppercase tracking-wider flex items-center gap-2">
+          <div className="bg-[#FAF7F2] border-2 border-[#D97706] rounded-xl p-5 space-y-2 shadow-md animate-fade-in">
+            <div className="flex items-center justify-between text-xs font-mono">
+              <span className="font-bold text-[#D97706] uppercase tracking-wider flex items-center gap-2">
                 <span className="w-2 h-2 rounded-full bg-[#D97706] animate-ping" />
                 Ingesting and Synthesizing Pareto Concession Frontier...
               </span>
-              <span className="font-mono font-bold text-[#1C1917]">{processProgress}%</span>
+              <span className="font-bold text-[#1C1917]">{processProgress}%</span>
             </div>
             <ProgressBar value={processProgress} tone="amber" height="h-2" />
           </div>
         )}
 
-        {/* Error Notification Banner */}
+        {/* ERROR BANNER */}
         {errorMessage && (
-          <div className="bg-[#FEF2F2] border-2 border-[#DC2626] rounded p-space-md text-sm text-[#991B1B] flex items-center justify-between animate-fade-in font-mono">
+          <div className="bg-[#FEF2F2] border-2 border-[#DC2626] rounded-xl p-4 text-xs text-[#991B1B] flex items-center justify-between animate-fade-in font-mono">
             <div className="flex items-center gap-2">
               <span className="material-symbols-outlined text-base text-[#DC2626]">error</span>
               <span>{errorMessage}</span>
@@ -418,36 +362,67 @@ export const Intake: React.FC = () => {
             <button
               type="button"
               onClick={() => setErrorMessage(null)}
-              className="text-xs uppercase hover:underline font-bold"
+              className="uppercase hover:underline font-bold"
             >
               Dismiss
             </button>
           </div>
         )}
 
-        {/* Footer Actions */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-space-md pt-space-xs pb-space-xl">
-          <button
-            type="button"
-            onClick={() => {
-              resetIntake();
-              setErrorMessage(null);
-            }}
-            className="text-xs font-mono text-[#78716C] hover:text-[#1C1917] uppercase tracking-wider"
-          >
-            Reset Ingestion Form
-          </button>
+        {/* 4. PROMINENT CENTERED INITIATE CTA BLOCK */}
+        <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded-xl p-6 flex flex-col items-center justify-center text-center space-y-4 shadow-sm">
+          <div className="flex flex-col items-center space-y-1">
+            <span className="font-mono text-[11px] text-[#78716C] uppercase tracking-widest font-semibold">
+              Ready for Multi-Agent Resolution
+            </span>
+            <p className="text-xs text-[#57534E] max-w-md">
+              Generates bilateral redline AST diffs, calculates concession tradeoffs, and opens the live negotiation telemetry pipeline.
+            </p>
+          </div>
 
-          <Button
-            variant="primary"
-            size="lg"
-            icon="auto_awesome"
-            disabled={isProcessing}
-            onClick={handleStartIngestion}
-            className="w-full sm:w-auto"
-          >
-            {isProcessing ? 'Synthesizing...' : 'Initiate Bilateral Synthesis & Conflict Analysis'}
-          </Button>
+          <div className="flex flex-col items-center gap-3 w-full sm:w-auto">
+            <Button
+              variant="primary"
+              size="lg"
+              icon="auto_awesome"
+              disabled={isProcessing}
+              onClick={handleStartIngestion}
+              className="w-full sm:w-auto px-8 py-3.5 text-sm font-bold shadow-md hover:shadow-lg transition-all"
+            >
+              {isProcessing ? 'Synthesizing Pipeline...' : 'Initiate Bilateral Synthesis & Conflict Analysis'}
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => {
+                resetIntake();
+                setErrorMessage(null);
+              }}
+              className="text-[11px] font-mono text-[#78716C] hover:text-[#1C1917] uppercase tracking-wider transition-colors"
+            >
+              Reset Ingestion Form
+            </button>
+          </div>
+        </div>
+
+        {/* 5. FOOTER TELEMETRY VERIFICATION BAR */}
+        <div className="bg-[#FAF7F2]/80 border border-[#D6CEBE]/60 rounded-xl p-3.5 grid grid-cols-2 md:grid-cols-4 gap-3 text-center font-mono text-[11px] text-[#166534]">
+          <div className="flex items-center justify-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+            <span>AST Redline Engine</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+            <span>48k+ Precedents</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+            <span>Hardware MFA Active</span>
+          </div>
+          <div className="flex items-center justify-center gap-1.5">
+            <span className="material-symbols-outlined text-[15px]">check_circle</span>
+            <span>Cryptographic Provenance</span>
+          </div>
         </div>
       </div>
     </div>

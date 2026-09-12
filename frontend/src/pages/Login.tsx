@@ -208,7 +208,7 @@ export const Login: React.FC = () => {
     // Short animation pause then login
     setTimeout(() => {
       loginWithGoogle(googleProfile);
-      navigate('/dashboard');
+      navigate('/intake');
     }, 600);
   };
 
@@ -216,7 +216,7 @@ export const Login: React.FC = () => {
     setIsLoggingIn(true);
     setTimeout(() => {
       loginAsPreset(preset);
-      navigate('/dashboard');
+      navigate('/intake');
     }, 700);
   };
 

@@ -6,6 +6,7 @@ import { Button } from '../components/Button';
 import { RiskChip } from '../components/RiskChip';
 import { LedgerTable, ColumnDef } from '../components/LedgerTable';
 import { ContractClause } from '../data/mock';
+import { useIntake } from '../context/IntakeContext';
 import {
   getReport,
   submitReview,
@@ -14,9 +15,10 @@ import {
 } from '../services/api';
 
 export const Reports: React.FC = () => {
-  const { id } = useParams<{ id: string }>();
+  const { id } = useParams<{ id?: string }>();
   const navigate = useNavigate();
-  const reportOrMatterId = id || '2025-INT-809';
+  const { matterId } = useIntake();
+  const reportOrMatterId = id || matterId || '2025-INT-809';
 
   const [reportData, setReportData] = useState<ReportResponse | null>(null);
   const [signed, setSigned] = useState(false);
@@ -197,8 +199,8 @@ export const Reports: React.FC = () => {
       title: 'Clause §',
       render: (c) => (
         <div className="flex flex-col">
-          <span className="font-mono text-xs font-bold text-primary">{c.section}</span>
-          <span className="font-headline-md text-xs font-semibold text-on-surface line-clamp-1">
+          <span className="font-mono text-xs font-bold text-[#D97706]">{c.section}</span>
+          <span className="font-headline-md text-xs font-bold text-[#1C1917] line-clamp-1">
             {c.title}
           </span>
         </div>
@@ -208,7 +210,7 @@ export const Reports: React.FC = () => {
       key: 'conformedProposal',
       title: 'Final Conformed Language',
       render: (c) => (
-        <p className="font-contract-clause text-xs text-on-surface-variant line-clamp-2 max-w-md italic">
+        <p className="font-contract-clause text-xs text-[#44403C] line-clamp-2 max-w-md italic">
           "{c.conformedProposal}"
         </p>
       ),
@@ -222,7 +224,7 @@ export const Reports: React.FC = () => {
       key: 'precedentAlignment',
       title: 'Precedent Match',
       render: (c) => (
-        <span className="font-mono text-xs font-semibold text-secondary">
+        <span className="font-mono text-xs font-bold text-[#166534]">
           {c.precedentAlignment}%
         </span>
       ),
@@ -265,66 +267,66 @@ export const Reports: React.FC = () => {
     'Elena Rostova (General Counsel)';
 
   return (
-    <div className="w-full bg-surface-container-low px-space-base md:px-space-xl py-space-lg flex justify-center min-h-screen selection:bg-primary-container selection:text-on-surface">
+    <div className="w-full bg-[#F5F1E8] text-[#1C1917] px-4 md:px-8 py-6 md:py-8 flex justify-center min-h-screen selection:bg-primary-container selection:text-on-surface">
       {/* Central Parchment Document Folio */}
-      <div className="w-full max-w-[62rem] bg-surface-container-lowest text-on-surface border border-outline-variant/40 shadow-2xl rounded overflow-hidden pb-space-3xl mb-space-3xl relative">
+      <div className="w-full max-w-5xl bg-[#FAF7F2] text-[#1C1917] border border-[#D6CEBE] shadow-xl rounded-xl overflow-hidden pb-12 mb-12 relative">
         {/* Toast Notification Banner */}
         {actionNotification && (
-          <div className="px-space-lg py-2 bg-[#DCFCE7] border-b border-[#86EFAC] text-[#166534] font-mono text-xs flex items-center gap-2">
+          <div className="px-6 py-2.5 bg-[#DCFCE7] border-b border-[#86EFAC] text-[#166534] font-mono text-xs flex items-center gap-2">
             <span className="material-symbols-outlined text-sm">info</span>
             <span>{actionNotification}</span>
           </div>
         )}
 
         {/* 1. DOCKET OVERLINE BANNER */}
-        <div className="bg-surface-container-low text-on-surface px-space-lg py-space-sm flex flex-wrap items-center justify-between gap-space-xs text-label-sm font-mono tracking-widest uppercase border-b border-outline-variant/30">
-          <div className="flex items-center gap-space-sm min-w-0">
-            <span className="w-2 h-2 rounded-full bg-primary-container shrink-0" />
-            <span className="truncate font-bold tracking-wider text-primary">
+        <div className="bg-[#FAF7F2] text-[#1C1917] px-6 py-3 flex flex-wrap items-center justify-between gap-2 text-xs font-mono tracking-wider uppercase border-b border-[#D6CEBE]">
+          <div className="flex items-center gap-2 min-w-0">
+            <span className="w-2 h-2 rounded-full bg-[#D97706] shrink-0" />
+            <span className="truncate font-bold tracking-wider text-[#D97706]">
               MATTER DOSSIER: DOCKET #{reportData?.docketNumber || (reportData as any)?.docket_number || reportOrMatterId}
             </span>
-            <span className="text-outline-variant">/</span>
-            <span className="text-on-surface-variant truncate">
+            <span className="text-[#78716C]">/</span>
+            <span className="text-[#57534E] truncate">
               {matterTitle} × {counterpartyName}
             </span>
           </div>
-          <div className="flex items-center gap-space-md shrink-0">
-            <span className="bg-surface-container-high text-primary font-semibold px-2 py-0.5 rounded border border-primary/20">
+          <div className="flex items-center gap-3 shrink-0">
+            <span className="bg-[#FEF3C7] text-[#92400E] font-semibold px-2.5 py-0.5 rounded border border-[#FCD34D] font-mono text-[10px]">
               FINAL SIGN-OFF BRIEF
             </span>
-            <span className="text-secondary font-semibold flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
+            <span className="text-[#166534] font-semibold flex items-center gap-1 font-mono text-[10px]">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#166534]" />
               STAGE 4 CONCLUDED
             </span>
           </div>
         </div>
 
         {/* 2. FORMAL PUBLICATION MASTHEAD */}
-        <div className="px-space-xl pt-space-xl pb-space-lg">
-          <div className="flex flex-col md:flex-row md:items-end justify-between gap-space-md pb-space-base">
+        <div className="px-6 md:px-8 pt-6 pb-4">
+          <div className="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-4">
             <div className="flex flex-col space-y-1">
-              <div className="flex items-center gap-space-xs">
-                <span className="font-mono text-label-sm tracking-widest text-primary uppercase font-bold">
+              <div className="flex items-center gap-2">
+                <span className="font-mono text-[10px] tracking-widest text-[#D97706] uppercase font-bold">
                   Negotia Autonomous Legal Dossier
                 </span>
-                <span className="text-outline-variant">•</span>
-                <span className="font-mono text-label-sm text-outline tracking-wider uppercase">
+                <span className="text-[#78716C]">•</span>
+                <span className="font-mono text-[10px] text-[#78716C] tracking-wider uppercase font-semibold">
                   Confidential / Work Product
                 </span>
               </div>
-              <h1 className="font-headline-xl text-3xl sm:text-4xl text-on-surface font-serif tracking-tight leading-none">
+              <h1 className="font-headline-xl text-3xl sm:text-4xl text-[#1C1917] font-serif tracking-tight leading-none font-bold">
                 Executive Negotiation Report
               </h1>
-              <p className="font-headline-md text-base text-primary font-serif italic">
+              <p className="font-headline-md text-base text-[#57534E] font-serif italic">
                 Matter #{reportData?.matterId || (reportData as any)?.matter_id || reportOrMatterId} · {matterTitle}
               </p>
             </div>
 
             {/* Publication Credentials Block */}
-            <div className="flex flex-col items-start md:items-end text-label-sm font-mono space-y-1 text-outline">
+            <div className="flex flex-col items-start md:items-end text-xs font-mono space-y-1 text-[#78716C]">
               <div>
-                <span className="uppercase text-on-surface font-semibold">Date: </span>
-                <span>
+                <span className="uppercase text-[#1C1917] font-bold">Date: </span>
+                <span className="text-[#44403C]">
                   {reportData?.createdAt
                     ? new Date(reportData.createdAt).toLocaleDateString('en-US', {
                         month: 'long',
@@ -339,14 +341,14 @@ export const Reports: React.FC = () => {
                 </span>
               </div>
               <div>
-                <span className="uppercase text-on-surface font-semibold">Lead Counsel: </span>
-                <span>{leadCounselName}</span>
+                <span className="uppercase text-[#1C1917] font-bold">Lead Counsel: </span>
+                <span className="text-[#44403C]">{leadCounselName}</span>
               </div>
               <div className="flex items-center gap-1.5 pt-1">
-                <span className="bg-secondary-container/30 text-secondary border border-secondary/30 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
+                <span className="bg-[#DCFCE7] text-[#166534] border border-[#86EFAC] px-2 py-0.5 rounded text-[10px] uppercase font-bold">
                   SEC EDGAR Indexed
                 </span>
-                <span className="bg-primary-container/20 text-primary border border-primary/30 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
+                <span className="bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] px-2 py-0.5 rounded text-[10px] uppercase font-bold">
                   SOC-2 Cryptosealed
                 </span>
               </div>
@@ -354,7 +356,7 @@ export const Reports: React.FC = () => {
           </div>
 
           {/* Intaglio Hairline Separation Rule */}
-          <div className="w-full h-px bg-outline-variant/30 my-space-md" />
+          <div className="w-full h-px bg-[#D6CEBE] my-4" />
 
           {/* 3. SYNTHESIS & EQUILIBRIUM RING GRID */}
           {(() => {
@@ -365,67 +367,68 @@ export const Reports: React.FC = () => {
             const isPareto = reportData?.isParetoOptimal ?? reportData?.is_pareto_optimal ?? true;
 
             return (
-              <div className="space-y-space-md pt-space-xs">
-                <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-stretch">
+              <div className="space-y-4 pt-2">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-stretch">
                   {/* Left: Editorial Synthesis */}
-                  <div className="lg:col-span-7 flex flex-col justify-between space-y-space-sm pr-0 lg:pr-space-md">
-                    <div className="space-y-space-xs">
+                  <div className="lg:col-span-7 flex flex-col justify-between space-y-4 pr-0 lg:pr-4">
+                    <div className="space-y-2">
                       <div className="flex items-center gap-2">
-                        <span className="material-symbols-outlined text-primary text-xl">
+                        <span className="material-symbols-outlined text-[#D97706] text-xl">
                           verified_user
                         </span>
-                        <span className="font-mono text-label-sm tracking-widest text-outline uppercase font-semibold">
+                        <span className="font-mono text-xs tracking-widest text-[#78716C] uppercase font-bold">
                           Autonomous Synthesis & Settlement Verdict
                         </span>
                       </div>
-                      <h2 className="font-headline-md text-2xl text-on-surface font-serif">
+                      <h2 className="font-headline-md text-2xl text-[#1C1917] font-serif font-bold">
                         Consensus Reached on Master Bilateral Terms
                       </h2>
-                      <p className="font-body-md text-on-surface-variant text-sm leading-relaxed">
+                      <p className="font-body-md text-[#44403C] text-sm leading-relaxed font-normal">
                         {executiveSummary}
                       </p>
                     </div>
 
-                    <div className="pt-3 flex flex-wrap items-center gap-space-sm font-mono text-xs text-outline border-t border-outline-variant/20">
-                      <span>Cycle Time: <strong>{turnaroundMinutes} minutes</strong></span>
+                    <div className="pt-3 flex flex-wrap items-center gap-2 font-mono text-xs text-[#78716C] border-t border-[#D6CEBE]">
+                      <span>Cycle Time: <strong className="text-[#1C1917]">{turnaroundMinutes} minutes</strong></span>
                       <span>•</span>
-                      <span>Outside Counsel Savings: <strong>${typeof savingsAmount === 'number' ? savingsAmount.toLocaleString() : savingsAmount}</strong></span>
+                      <span>Outside Counsel Savings: <strong className="text-[#1C1917]">${typeof savingsAmount === 'number' ? savingsAmount.toLocaleString() : savingsAmount}</strong></span>
                       <span>•</span>
-                      <span className="text-secondary font-semibold flex items-center gap-1">
-                        <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
+                      <span className="text-[#166534] font-bold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-[#166534]" />
                         Zero Exposure Drift
                       </span>
                     </div>
                   </div>
 
                   {/* Right: Circular Equilibrium Ring & Live Metrics Panel */}
-                  <div className="lg:col-span-5 bg-surface-container-low p-space-md rounded-lg border border-outline-variant/30 flex flex-col items-center justify-between space-y-space-sm">
+                  <div className="lg:col-span-5 bg-[#EDE7DC] p-4 rounded-xl border border-[#D6CEBE] flex flex-col items-center justify-between space-y-3">
                     <FairnessGauge
                       value={fairnessIndex}
                       size={140}
+                      theme="light"
                       label="Pareto Conformance"
                       sublabel="Nash Equilibrium Index"
                     />
 
                     {/* Real-Time Metrics Row */}
-                    <div className="w-full grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/30 text-center font-mono text-xs">
-                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
-                        <span className="text-[10px] text-outline uppercase block">Leverage</span>
-                        <span className="font-bold text-primary text-sm">{leverageScore} / 10</span>
+                    <div className="w-full grid grid-cols-3 gap-2 pt-2 border-t border-[#D6CEBE] text-center font-mono text-xs">
+                      <div className="bg-[#FAF7F2] p-2 rounded border border-[#D6CEBE]">
+                        <span className="text-[10px] text-[#78716C] uppercase block">Leverage</span>
+                        <span className="font-bold text-[#D97706] text-sm">{leverageScore} / 10</span>
                       </div>
-                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
-                        <span className="text-[10px] text-outline uppercase block">Acceptance</span>
-                        <span className="font-bold text-secondary text-sm">{acceptancePct}%</span>
+                      <div className="bg-[#FAF7F2] p-2 rounded border border-[#D6CEBE]">
+                        <span className="text-[10px] text-[#78716C] uppercase block">Acceptance</span>
+                        <span className="font-bold text-[#166534] text-sm">{acceptancePct}%</span>
                       </div>
-                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
-                        <span className="text-[10px] text-outline uppercase block">Status</span>
-                        <span className="font-bold text-on-surface text-[11px] truncate block">
+                      <div className="bg-[#FAF7F2] p-2 rounded border border-[#D6CEBE]">
+                        <span className="text-[10px] text-[#78716C] uppercase block">Status</span>
+                        <span className="font-bold text-[#1C1917] text-[11px] truncate block">
                           {isPareto ? 'Pareto Opt.' : 'Sub-Optimal'}
                         </span>
                       </div>
                     </div>
 
-                    <div className="w-full text-center bg-primary-container/20 border border-primary/30 rounded py-1 px-2 font-mono text-[11px] text-primary font-semibold uppercase tracking-wider">
+                    <div className="w-full text-center bg-[#FEF3C7] border border-[#FCD34D] rounded py-1 px-2 font-mono text-[11px] text-[#92400E] font-bold uppercase tracking-wider">
                       {equilibriumLabel}
                     </div>
                   </div>
@@ -435,12 +438,12 @@ export const Reports: React.FC = () => {
           })()}
 
           {/* 4. CONCESSIONS LEDGER TABLE */}
-          <div className="mt-space-xl space-y-space-sm">
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <h3 className="font-headline-md text-lg text-on-surface font-semibold">
+          <div className="mt-8 space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE]">
+              <h3 className="font-headline-md text-lg text-[#1C1917] font-semibold">
                 Settled Clause Concessions Ledger
               </h3>
-              <span className="font-mono text-xs text-outline">
+              <span className="font-mono text-xs text-[#78716C]">
                 {settledClauses.length} Resolved Items
               </span>
             </div>
@@ -453,25 +456,25 @@ export const Reports: React.FC = () => {
 
             {/* Render Key Bilateral Compromises if provided by Backend Negotiation Engine */}
             {reportData?.keyBilateralCompromises && reportData.keyBilateralCompromises.length > 0 && (
-              <div className="mt-space-md p-space-md bg-surface-container-low rounded border border-outline-variant/30 space-y-space-xs">
-                <span className="font-mono text-xs uppercase tracking-wider text-primary font-semibold block">
+              <div className="mt-4 p-4 bg-[#EDE7DC] rounded-xl border border-[#D6CEBE] space-y-2">
+                <span className="font-mono text-xs uppercase tracking-wider text-[#D97706] font-bold block">
                   Arbiter-3 Bilateral Compromise Strategies
                 </span>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                   {reportData.keyBilateralCompromises.map((kbc: any, idx: number) => (
-                    <div key={idx} className="p-2 bg-surface-container-lowest rounded border border-outline-variant/20 font-mono text-xs space-y-1">
+                    <div key={idx} className="p-2.5 bg-[#FAF7F2] rounded-lg border border-[#D6CEBE] font-mono text-xs space-y-1">
                       <div className="flex justify-between items-center">
-                        <span className="font-bold text-on-surface">{kbc.title || kbc.clauseId}</span>
-                        <span className="text-[10px] bg-secondary-container/40 text-secondary px-1.5 py-0.5 rounded font-bold uppercase">
+                        <span className="font-bold text-[#1C1917]">{kbc.title || kbc.clauseId}</span>
+                        <span className="text-[10px] bg-[#FEF3C7] text-[#92400E] px-1.5 py-0.5 rounded font-bold uppercase border border-[#FCD34D]">
                           {kbc.strategy}
                         </span>
                       </div>
-                      <p className="text-[11px] text-on-surface-variant font-sans line-clamp-2 italic">
+                      <p className="text-[11px] text-[#57534E] font-sans line-clamp-2 italic">
                         "{kbc.conformedProposal}"
                       </p>
-                      <div className="flex justify-between text-[10px] text-outline pt-1 border-t border-outline-variant/10">
-                        <span>Party A Utility: <strong className="text-primary">{kbc.partyAUtility}</strong></span>
-                        <span>Party B Utility: <strong className="text-secondary">{kbc.partyBUtility}</strong></span>
+                      <div className="flex justify-between text-[10px] text-[#78716C] pt-1 border-t border-[#D6CEBE]/60">
+                        <span>Party A Utility: <strong className="text-[#D97706]">{kbc.partyAUtility}</strong></span>
+                        <span>Party B Utility: <strong className="text-[#166534]">{kbc.partyBUtility}</strong></span>
                       </div>
                     </div>
                   ))}
@@ -481,21 +484,21 @@ export const Reports: React.FC = () => {
           </div>
 
           {/* 5. HUMAN REVIEW GATE (AGENT 4) */}
-          <div className="mt-space-2xl p-space-lg bg-surface-container-lowest rounded border-l-[3px] border-l-primary border-y border-r border-outline-variant/30 space-y-space-md shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-outline-variant/20 pb-3">
+          <div className="mt-8 p-6 bg-[#FAF7F2] rounded-xl border-l-4 border-l-[#D97706] border border-[#D6CEBE] space-y-4 shadow-xs">
+            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-[#D6CEBE] pb-3">
               <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-xl">
+                <span className="material-symbols-outlined text-[#D97706] text-xl">
                   gavel
                 </span>
-                <h3 className="font-headline-md text-base font-bold text-on-surface">
+                <h3 className="font-headline-md text-base font-bold text-[#1C1917]">
                   AGENT 4 — AWAITING HUMAN REVIEW
                 </h3>
               </div>
 
               {/* Status Badge */}
               {reviewStatus === 'pending' && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary-container/20 text-primary border border-primary/40 rounded font-mono text-xs uppercase tracking-wider font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] rounded font-mono text-xs uppercase tracking-wider font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-[#D97706] animate-pulse" />
                   PENDING MANUAL APPROVAL
                 </span>
               )}
@@ -510,8 +513,8 @@ export const Reports: React.FC = () => {
               )}
 
               {reviewStatus === 'revision_requested' && (
-                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-primary-container/30 text-primary border border-primary/50 rounded font-mono text-xs uppercase tracking-wider font-semibold">
-                  <span className="w-2 h-2 rounded-full bg-primary animate-ping" />
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] rounded font-mono text-xs uppercase tracking-wider font-semibold">
+                  <span className="w-2 h-2 rounded-full bg-[#D97706] animate-ping" />
                   REVISION REQUESTED — Agent 4 Re-generating...
                 </span>
               )}
@@ -526,15 +529,15 @@ export const Reports: React.FC = () => {
               )}
             </div>
 
-            <p className="font-body-md text-xs text-on-surface-variant">
+            <p className="font-body-md text-xs text-[#57534E]">
               Agent 4 (Scrivener-4) has synthesized all bilateral compromises into the conformed draft above. Under enterprise legal governance, human counsel must review and ratify before cryptographic attestation.
             </p>
 
             {/* Revision Progress Bar if revision requested */}
             {reviewStatus === 'revision_requested' && (
-              <div className="w-full bg-surface-container-high rounded h-2 overflow-hidden border border-outline-variant/30">
+              <div className="w-full bg-[#EDE7DC] rounded h-2 overflow-hidden border border-[#D6CEBE]">
                 <div
-                  className="bg-primary h-full transition-all duration-150"
+                  className="bg-[#D97706] h-full transition-all duration-150"
                   style={{ width: `${revisionProgress}%` }}
                 />
               </div>
@@ -562,10 +565,9 @@ export const Reports: React.FC = () => {
                   Request Agent Revision
                 </Button>
                 <Button
-                  variant="ghost"
+                  variant="danger"
                   size="sm"
                   icon="person_alert"
-                  className="text-error hover:bg-error-container/20"
                   onClick={handleEscalate}
                   disabled={isSubmittingReview}
                 >
@@ -576,43 +578,43 @@ export const Reports: React.FC = () => {
           </div>
 
           {/* 6. CRYPTOGRAPHIC SIGN-OFF & ATTESTATION BLOCK */}
-          <div className="mt-space-2xl p-space-lg bg-surface-container-low rounded border border-outline-variant/30 space-y-space-md">
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
-              <span className="font-mono text-xs uppercase tracking-wider text-outline font-semibold">
+          <div className="mt-8 p-6 bg-[#EDE7DC] rounded-xl border border-[#D6CEBE] space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE]">
+              <span className="font-mono text-xs uppercase tracking-wider text-[#78716C] font-semibold">
                 Cryptographic Attestation & Sovereign Seal
               </span>
-              <span className="font-mono text-xs text-secondary flex items-center gap-1">
+              <span className="font-mono text-xs text-[#166534] flex items-center gap-1 font-semibold">
                 <span className="material-symbols-outlined text-sm">lock</span>
                 Hardware Key Validated
               </span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-space-lg items-center">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 items-center">
               {/* General Counsel Signature Box */}
-              <div className="p-space-base bg-surface-container-lowest rounded border border-outline-variant/20 space-y-2">
-                <span className="font-mono text-[10px] text-outline uppercase block">
+              <div className="p-4 bg-[#FAF7F2] rounded-lg border border-[#D6CEBE] space-y-2">
+                <span className="font-mono text-[10px] text-[#78716C] uppercase block font-semibold">
                   Lead Counsel Attestation:
                 </span>
-                <div className="font-serif italic text-xl text-on-surface h-10 flex items-center">
+                <div className="font-serif italic text-xl text-[#1C1917] h-10 flex items-center">
                   {signed ? leadCounselName : 'Awaiting Sign-off'}
                 </div>
-                <div className="text-xs font-mono text-outline pt-1 border-t border-outline-variant/20 flex justify-between">
+                <div className="text-xs font-mono text-[#78716C] pt-1 border-t border-[#D6CEBE] flex justify-between">
                   <span>Timestamp: {reportData?.updatedAt ? new Date(reportData.updatedAt).toLocaleString() : 'Pending Sign-off'}</span>
                   <span>MFA: YubiKey 5C</span>
                 </div>
               </div>
 
               {/* Wax Seal Verification Stamp */}
-              <div className="flex items-center gap-space-md p-space-base bg-surface-container-lowest rounded border border-outline-variant/20">
+              <div className="flex items-center gap-4 p-4 bg-[#FAF7F2] rounded-lg border border-[#D6CEBE]">
                 <WaxSealLogo size={48} pulse={signed} />
                 <div className="flex flex-col min-w-0">
-                  <span className="font-mono text-xs font-bold text-primary uppercase">
+                  <span className="font-mono text-xs font-bold text-[#D97706] uppercase">
                     Negotia Cryptoseal Verified
                   </span>
-                  <span className="font-mono text-[10px] text-outline truncate">
+                  <span className="font-mono text-[10px] text-[#78716C] truncate">
                     SHA-256: {auditHash}
                   </span>
-                  <span className="font-mono text-[10px] text-secondary font-semibold mt-0.5">
+                  <span className="font-mono text-[10px] text-[#166534] font-semibold mt-0.5">
                     Immutable Ledger Block #712,042
                   </span>
                 </div>

@@ -6,6 +6,7 @@ interface FairnessGaugeProps {
   label?: string;
   sublabel?: string;
   className?: string;
+  theme?: 'light' | 'dark';
 }
 
 export const FairnessGauge: React.FC<FairnessGaugeProps> = ({
@@ -14,19 +15,33 @@ export const FairnessGauge: React.FC<FairnessGaugeProps> = ({
   label = 'Fairness Index',
   sublabel = 'Nash Equilibrium',
   className = '',
+  theme = 'dark',
 }) => {
   const strokeWidth = 10;
   const radius = (size - strokeWidth * 2) / 2;
   const circumference = 2 * Math.PI * radius;
-  // We can show a 270-degree arc or full circle
   const clampedValue = Math.min(100, Math.max(0, value));
   const strokeDashoffset = circumference - (clampedValue / 100) * circumference;
 
+  const isDark = theme === 'dark';
+
   const getColor = (val: number) => {
-    if (val >= 80) return '#8bd79b'; // secondary green
-    if (val >= 60) return '#d97707'; // amber primary-container
-    return '#f55e55'; // error red
+    if (isDark) {
+      if (val >= 80) return '#4ADE80'; // bright green
+      if (val >= 60) return '#F59E0B'; // bright amber
+      return '#F87171'; // bright red
+    } else {
+      if (val >= 80) return '#166534'; // crisp forest green
+      if (val >= 60) return '#D97706'; // warm amber
+      return '#991B1B'; // crisp rust red
+    }
   };
+
+  const trackStroke = isDark ? '#383432' : '#D6CEBE';
+  const percentageColor = isDark ? '#FFFFFF' : '#1C1917';
+  const centerLabelColor = isDark ? '#8BD79B' : '#78716C';
+  const mainLabelColor = isDark ? '#F3F4F6' : '#1C1917';
+  const sublabelColor = isDark ? '#9CA3AF' : '#78716C';
 
   return (
     <div className={`flex flex-col items-center justify-center text-center ${className}`}>
@@ -38,7 +53,7 @@ export const FairnessGauge: React.FC<FairnessGaugeProps> = ({
             cy={size / 2}
             r={radius}
             fill="none"
-            stroke="#2d2927"
+            stroke={trackStroke}
             strokeWidth={strokeWidth}
           />
           {/* Value Progress */}
@@ -58,22 +73,22 @@ export const FairnessGauge: React.FC<FairnessGaugeProps> = ({
 
         {/* Central Display */}
         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-          <span className="font-headline-xl text-3xl font-semibold text-on-surface">
+          <span className="font-headline-xl text-3xl sm:text-4xl font-extrabold" style={{ color: percentageColor }}>
             {Math.round(clampedValue)}%
           </span>
-          <span className="font-label-sm text-[10px] text-outline uppercase font-mono tracking-widest mt-0.5">
+          <span className="font-label-sm text-[10px] uppercase font-mono font-bold tracking-widest mt-0.5" style={{ color: centerLabelColor }}>
             Balanced
           </span>
         </div>
       </div>
 
       {label && (
-        <span className="font-label-sm text-label-sm text-outline uppercase tracking-wider font-semibold mt-2">
+        <span className="font-label-sm text-label-sm uppercase tracking-wider font-bold mt-2" style={{ color: mainLabelColor }}>
           {label}
         </span>
       )}
       {sublabel && (
-        <span className="font-body-sm text-[11px] text-primary mt-0.5">
+        <span className="font-body-sm text-[11px] font-medium mt-0.5 max-w-[200px] leading-tight" style={{ color: sublabelColor }}>
           {sublabel}
         </span>
       )}

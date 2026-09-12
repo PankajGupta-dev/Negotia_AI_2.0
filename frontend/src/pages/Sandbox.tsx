@@ -324,7 +324,7 @@ export const Sandbox: React.FC = () => {
                 <Shimmer className="w-40 h-40 rounded-full" />
               </div>
             ) : (
-              <FairnessGauge value={fairness} size={160} label="Simulated Fairness Index" sublabel="Calibrated against 48,000+ SEC EDGAR Precedents" />
+              <FairnessGauge value={fairness} size={160} theme="dark" label="Simulated Fairness Index" sublabel="Calibrated against 48,000+ SEC EDGAR Precedents" />
             )}
 
             <div className="w-full grid grid-cols-2 gap-2 pt-space-xs border-t border-outline-variant/20 text-center font-mono">

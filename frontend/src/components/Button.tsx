@@ -21,17 +21,17 @@ export const Button: React.FC<ButtonProps> = ({
   const getVariantClasses = () => {
     switch (variant) {
       case 'primary':
-        return 'bg-primary-container hover:bg-primary text-on-primary-container font-semibold border border-primary/40 shadow-sm';
+        return 'bg-[#D97706] hover:bg-[#B45309] text-white font-bold border border-[#B45309] shadow-sm';
       case 'secondary':
-        return 'bg-surface-container-low hover:bg-surface-container text-on-surface border border-outline-variant/50';
+        return 'bg-[#EDE7DC] hover:bg-[#E2DACD] text-[#1C1917] font-semibold border-2 border-[#78716C] shadow-xs';
       case 'parchment':
-        return 'bg-[#EDE7DC] hover:bg-[#E2DACD] text-[#1C1917] border border-[#D6CEBE] font-medium';
+        return 'bg-[#EDE7DC] hover:bg-[#E2DACD] text-[#1C1917] border-2 border-[#8C8275] font-semibold shadow-xs';
       case 'outline':
-        return 'bg-transparent hover:bg-surface-container text-on-surface border border-outline-variant/40';
+        return 'bg-[#FAF7F2] hover:bg-[#EDE7DC] text-[#1C1917] font-bold border-2 border-[#78716C] shadow-xs';
       case 'danger':
-        return 'bg-error-container hover:bg-error/80 text-on-error-container border border-error/40';
+        return 'bg-[#FEE2E2] hover:bg-[#FCA5A5] text-[#991B1B] font-bold border-2 border-[#991B1B] shadow-xs';
       case 'ghost':
-        return 'bg-transparent hover:bg-surface-container/50 text-primary hover:underline border-transparent';
+        return 'bg-transparent hover:bg-[#EDE7DC] text-[#991B1B] font-bold border border-transparent';
       default:
         return '';
     }

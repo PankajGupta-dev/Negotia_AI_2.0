@@ -870,11 +870,11 @@ export const NegotiationWorkspace: React.FC = () => {
       <section className="w-full bg-surface-container-lowest border-b border-outline-variant/30 px-space-base md:px-space-lg py-2.5 flex flex-wrap items-center justify-between gap-space-sm shadow-sm">
         <div className="flex items-center gap-space-md flex-wrap min-w-0">
           <div className="flex items-center gap-2">
-            <span className="px-2 py-0.5 bg-primary-container/20 text-primary font-mono text-label-sm uppercase tracking-wider font-semibold rounded-sm border border-primary/30">
-              {matterDetail?.docketNumber || (targetMatterId ? `Docket #${targetMatterId}` : 'Docket #2025-INT-809')}
+            <span className="px-2.5 py-1 bg-primary-container/20 text-primary font-mono text-xs uppercase tracking-wider font-semibold rounded border border-primary/30">
+              {matterDetail?.docketNumber || (targetMatterId ? `Docket #${targetMatterId}` : 'Docket Active')}
             </span>
             <span className="font-headline-md text-base md:text-lg text-on-surface font-semibold">
-              {matterDetail?.title || matterTitle || 'Master Services Agreement'}
+              {matterDetail?.title || matterTitle || (docAFile ? docAFile.replace(/\.[^/.]+$/, '') : 'Enterprise Legal Agreement')}
             </span>
           </div>
           <div className="flex items-center gap-2 text-on-surface-variant font-body-sm text-xs">
@@ -896,7 +896,7 @@ export const NegotiationWorkspace: React.FC = () => {
           </div>
         </div>
 
-        {/* Quick Docket Actions */}
+        {/* Quick Docket Actions (Cleaned up, no Generate Report duplicate) */}
         <div className="flex items-center gap-2">
           <Button
             variant="secondary"
@@ -906,74 +906,66 @@ export const NegotiationWorkspace: React.FC = () => {
           >
             Open in Sandbox
           </Button>
-          <Button
-            variant="primary"
-            size="sm"
-            icon="description"
-            onClick={() => navigate(`/reports/${targetMatterId}`)}
-          >
-            Generate Report
-          </Button>
         </div>
       </section>
 
-      {/* 4-AGENT STATUS STRIP */}
-      <section className="w-full bg-surface-container-lowest border-b border-outline-variant/20 px-space-base py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
-        <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
+      {/* 4-AGENT STATUS STRIP (Clean, no text overlap) */}
+      <section className="w-full bg-surface-container-lowest border-b border-outline-variant/20 px-space-base py-2 flex items-center justify-between gap-3 shadow-xs overflow-x-auto">
+        <div className="flex items-center gap-2 font-mono text-xs whitespace-nowrap min-w-0 overflow-x-auto py-0.5">
           {/* A1 */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
-            activeAgent === 'a1' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a1' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold shadow-2xs' : 'bg-surface-container-low border-outline-variant/20 text-on-surface-variant'
           }`}>
             <span className={`w-2 h-2 rounded-full ${activeAgent === 'a1' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
             <span className="font-bold">Agent 1</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-semibold">Buyer Legal Analyst</span>
+            <span>Buyer Legal Analyst</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-semibold">{activeAgent === 'a1' ? 'RUNNING' : 'COMPLETE'}</span>
+            <span className="font-bold">{activeAgent === 'a1' ? 'RUNNING' : 'COMPLETE'}</span>
           </div>
 
-          <span className="text-outline-variant text-xs">|</span>
+          <span className="text-outline-variant/60 text-xs shrink-0">|</span>
 
           {/* A2 */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
-            activeAgent === 'a2' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a2' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold shadow-2xs' : 'bg-surface-container-low border-outline-variant/20 text-on-surface-variant'
           }`}>
             <span className={`w-2 h-2 rounded-full ${activeAgent === 'a2' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
             <span className="font-bold">Agent 2</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-semibold">Seller Redline Auditor</span>
+            <span>Seller Redline Auditor</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-semibold">{activeAgent === 'a2' ? 'RUNNING' : 'COMPLETE'}</span>
+            <span className="font-bold">{activeAgent === 'a2' ? 'RUNNING' : 'COMPLETE'}</span>
           </div>
 
-          <span className="text-outline-variant text-xs">|</span>
+          <span className="text-outline-variant/60 text-xs shrink-0">|</span>
 
           {/* A3 */}
-          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
-            activeAgent === 'a3' || activeAgent === 'orchestrator' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          <div className={`flex items-center gap-1.5 px-3 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a3' || activeAgent === 'orchestrator' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold shadow-2xs' : 'bg-surface-container-low border-outline-variant/20 text-on-surface-variant'
           }`}>
             <span className={`w-2 h-2 rounded-full ${activeAgent === 'a3' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
             <span className="font-bold">Agent 3</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-bold">AI Judge & Mediator</span>
+            <span>AI Judge & Mediator</span>
             <span className="text-outline-variant">•</span>
             <span className="font-bold">{activeAgent === 'a3' ? 'ACTIVE' : 'COMPLETE'}</span>
           </div>
 
-          <span className="text-outline-variant text-xs">|</span>
+          <span className="text-outline-variant/60 text-xs shrink-0">|</span>
 
           {/* A4 */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low rounded border border-outline-variant/20 font-mono text-[11px] text-on-surface-variant/70 shrink-0">
+          <div className="flex items-center gap-1.5 px-3 py-1 bg-surface-container-low rounded border border-outline-variant/20 font-mono text-[11px] text-outline shrink-0">
             <span className="w-2 h-2 rounded-full bg-outline-variant" />
             <span className="font-bold">Agent 4</span>
             <span className="text-outline-variant">•</span>
-            <span className="font-semibold">Executive Report Clerk</span>
+            <span>Executive Report Clerk</span>
             <span className="text-outline-variant">•</span>
-            <span className="text-outline">QUEUED</span>
+            <span className="font-semibold">QUEUED</span>
           </div>
         </div>
 
-        <div className="hidden lg:flex items-center gap-2 text-on-surface-variant font-mono text-[10px]">
+        <div className="hidden xl:flex items-center gap-2 text-on-surface-variant font-mono text-[10px] shrink-0">
           <span className="material-symbols-outlined text-[14px] text-primary">hub</span>
           <span>4-Agent Automated Courtroom Active</span>
         </div>
@@ -981,20 +973,17 @@ export const NegotiationWorkspace: React.FC = () => {
 
       {/* 2. MAIN TRI-PANEL NEGOTIATION GRID */}
       <div className="flex-1 grid grid-cols-12 min-h-[calc(100vh-8rem)]">
-        {/* PANEL 1: CLAUSE OUTLINE DRAWER (3 cols) */}
-        <aside className="col-span-12 md:col-span-4 lg:col-span-3 bg-surface-container-lowest border-r border-outline-variant/30 flex flex-col justify-between select-none">
-          <div className="flex flex-col flex-1 min-h-0">
-            <div className="p-space-base border-b border-outline-variant/20 bg-surface-container-low/40 flex items-center justify-between">
-              <span className="font-mono text-label-sm uppercase tracking-wider text-outline font-semibold">
-                Contested Clause Index
-              </span>
-              <span className="font-mono text-[10px] text-primary bg-primary/10 px-1.5 py-0.5 rounded">
-                {clauses.length} Sections
+        {/* EXPANDED PARCHMENT DOCUMENT FOLIO (Center / 8-9 cols) */}
+        <div className="col-span-12 lg:col-span-8 xl:col-span-9 bg-[#F5F1E8] text-[#1C1917] p-4 md:p-6 overflow-y-auto space-y-4">
+          {/* Top Horizontal Clause Selector Bar */}
+          <div className="bg-[#FAF7F2] border border-[#D6CEBE] rounded-lg p-2.5 flex items-center justify-between gap-3 overflow-x-auto shadow-xs select-none">
+            <div className="flex items-center gap-2 shrink-0">
+              <span className="material-symbols-outlined text-sm text-[#D97706]">view_list</span>
+              <span className="font-mono text-xs font-bold text-[#1C1917] uppercase tracking-wider">
+                Contested Clauses ({clauses.length}):
               </span>
             </div>
-
-            {/* Clause navigation list */}
-            <div className="flex-1 overflow-y-auto divide-y divide-outline-variant/10">
+            <div className="flex items-center gap-2 overflow-x-auto min-w-0">
               {clauses.map((clause) => {
                 const isSelected = clause.id === selectedClauseId;
                 return (
@@ -1002,56 +991,20 @@ export const NegotiationWorkspace: React.FC = () => {
                     key={clause.id}
                     type="button"
                     onClick={() => setSelectedClauseId(clause.id)}
-                    className={`w-full text-left p-space-base transition-colors flex flex-col space-y-1.5 ${
+                    className={`px-3 py-1.5 rounded text-xs font-mono transition-all flex items-center gap-2 shrink-0 ${
                       isSelected
-                        ? 'bg-surface-container-low border-l-[3px] border-primary-container'
-                        : 'hover:bg-surface-container-high/40 border-l-[3px] border-transparent'
+                        ? 'bg-[#1C1917] text-[#FAF7F2] font-bold shadow-xs'
+                        : 'bg-[#EDE7DC] text-[#1C1917] hover:bg-[#D6CEBE] font-medium'
                     }`}
                   >
-                    <div className="flex items-center justify-between">
-                      <span className="font-mono text-xs font-semibold text-primary">
-                        {clause.section}
-                      </span>
-                      <RiskChip level={clause.riskLevel} score={clause.riskScore} />
-                    </div>
-                    <span className="font-headline-md text-sm text-on-surface font-semibold line-clamp-1">
-                      {clause.title}
-                    </span>
-                    <div className="flex items-center justify-between text-[11px] text-outline font-mono">
-                      <span>Match: {clause.precedentAlignment}%</span>
-                      <span
-                        className={`capitalize font-semibold ${
-                          clause.status === 'agreed' || clause.status === 'conformed'
-                            ? 'text-secondary'
-                            : 'text-primary'
-                        }`}
-                      >
-                        {clause.status}
-                      </span>
-                    </div>
+                    <span className="font-bold text-[#D97706]">{clause.section}</span>
+                    <span className="truncate max-w-[140px]">{clause.title}</span>
+                    <RiskChip level={clause.riskLevel} score={clause.riskScore} />
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Bottom quick calibration info */}
-          <div className="p-space-sm bg-surface-container-low border-t border-outline-variant/30 text-xs text-outline space-y-1">
-            <div className="flex items-center justify-between">
-              <span>Model Playbook</span>
-              <span className="text-on-surface font-mono font-semibold">Lex-Ultra v4.2</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span>Risk Ceiling</span>
-              <span className="text-secondary font-mono font-semibold">
-                {matterDetail?.varianceCeiling ? `${matterDetail.varianceCeiling}% Variance` : '18.5% Variance'}
-              </span>
-            </div>
-          </div>
-        </aside>
-
-        {/* PANEL 2: PARCHMENT DOCUMENT FOLIO (Center / 5-6 cols) */}
-        <div className="col-span-12 md:col-span-8 lg:col-span-6 bg-[#F5F1E8] text-[#1C1917] p-space-base md:p-space-lg overflow-y-auto">
           {appliedNotification && (
             <div className="mb-space-md p-space-sm bg-[#DCFCE7] border border-[#86EFAC] text-[#166534] font-mono text-xs rounded flex items-center gap-2">
               <span className="material-symbols-outlined text-sm">check_circle</span>
@@ -1348,24 +1301,24 @@ export const NegotiationWorkspace: React.FC = () => {
         </div>
 
         {/* PANEL 3: REAL-TIME AGENT DELIBERATION CONSOLE / 2-PARTY BILATERAL STREAM */}
-        <aside className="col-span-12 lg:col-span-3 bg-surface-container-lowest border-l border-outline-variant/30 p-space-base flex flex-col justify-between space-y-space-md overflow-hidden select-none">
+        <aside className="col-span-12 lg:col-span-4 xl:col-span-3 bg-[#FAF7F2] border-l border-[#D6CEBE] p-4 flex flex-col justify-between space-y-3 overflow-hidden select-none">
           <div className="flex flex-col flex-1 min-h-0 space-y-space-sm">
             {/* Header Strip with Switcher if in Private Room */}
             {(targetMatterId.startsWith('NEG-') || roomDetail) ? (
-              <div className="flex bg-surface-container-low rounded-lg p-0.5 border border-outline-variant/30 shrink-0">
+              <div className="flex bg-[#EDE7DC] rounded-lg p-0.5 border border-[#D6CEBE] shrink-0">
                 <button
                   type="button"
                   onClick={() => setConsoleTab('bilateral_room')}
-                  className={`flex-1 py-1.5 px-2 rounded text-xs font-semibold font-mono flex items-center justify-center gap-1.5 transition-all ${
+                  className={`flex-1 py-1.5 px-2 rounded text-xs font-bold font-mono flex items-center justify-center gap-1.5 transition-all ${
                     consoleTab === 'bilateral_room'
-                      ? 'bg-primary text-on-primary shadow-xs'
-                      : 'text-outline hover:text-on-surface'
+                      ? 'bg-[#D97706] text-white shadow-xs'
+                      : 'text-[#78716C] hover:text-[#1C1917]'
                   }`}
                 >
-                  <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-outline-variant'}`} />
+                  <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-[#166534]' : 'bg-[#D6CEBE]'}`} />
                   <span>2-Party Room</span>
                   {bilateralEvents.length > 0 && (
-                    <span className="text-[10px] px-1 rounded bg-black/20 font-bold">
+                    <span className="text-[10px] px-1 rounded bg-[#1C1917]/20 font-bold">
                       {bilateralEvents.length}
                     </span>
                   )}
@@ -1373,10 +1326,10 @@ export const NegotiationWorkspace: React.FC = () => {
                 <button
                   type="button"
                   onClick={() => setConsoleTab('ai_agents')}
-                  className={`flex-1 py-1.5 px-2 rounded text-xs font-semibold font-mono flex items-center justify-center gap-1.5 transition-all ${
+                  className={`flex-1 py-1.5 px-2 rounded text-xs font-bold font-mono flex items-center justify-center gap-1.5 transition-all ${
                     consoleTab === 'ai_agents'
-                      ? 'bg-primary text-on-primary shadow-xs'
-                      : 'text-outline hover:text-on-surface'
+                      ? 'bg-[#D97706] text-white shadow-xs'
+                      : 'text-[#78716C] hover:text-[#1C1917]'
                   }`}
                 >
                   <WaxSealLogo size={14} />
@@ -1384,17 +1337,17 @@ export const NegotiationWorkspace: React.FC = () => {
                 </button>
               </div>
             ) : (
-              <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20 shrink-0">
+              <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE] shrink-0">
                 <div className="flex items-center gap-2">
                   <WaxSealLogo size={22} pulse={liveStatus !== 'PENDING HUMAN REVIEW'} />
-                  <span className="font-label-lg text-sm font-bold text-on-surface">
+                  <span className="font-label-lg text-sm font-bold text-[#1C1917]">
                     Autonomous Deliberation
                   </span>
                 </div>
                 <span className={`font-mono text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${
                   liveStatus === 'PENDING HUMAN REVIEW'
-                    ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30'
-                    : 'bg-secondary-container/20 text-secondary border border-secondary/30 animate-pulse'
+                    ? 'bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D]'
+                    : 'bg-[#DCFCE7] text-[#166534] border border-[#86EFAC] animate-pulse'
                 }`}>
                   {liveStatus === 'PENDING HUMAN REVIEW' ? 'PENDING REVIEW' : 'LIVE'}
                 </span>
@@ -1405,18 +1358,18 @@ export const NegotiationWorkspace: React.FC = () => {
             {consoleTab === 'bilateral_room' ? (
               <div className="flex flex-col flex-1 min-h-0 space-y-2">
                 {/* WS Connection Status Strip */}
-                <div className="flex items-center justify-between px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
+                <div className="flex items-center justify-between px-2.5 py-1.5 bg-[#EDE7DC] rounded border border-[#D6CEBE] font-mono text-xs text-[#1C1917] shrink-0">
                   <div className="flex items-center gap-1.5">
                     <span className={`w-2 h-2 rounded-full ${
                       isRoomClosed
-                        ? 'bg-error'
+                        ? 'bg-[#991B1B]'
                         : wsConnected
-                        ? 'bg-emerald-400 animate-pulse'
+                        ? 'bg-[#166534] animate-pulse'
                         : wsReconnecting
-                        ? 'bg-amber-400 animate-pulse'
-                        : 'bg-outline-variant'
+                        ? 'bg-[#D97706] animate-pulse'
+                        : 'bg-[#D6CEBE]'
                     }`} />
-                    <span className="text-[11px] font-semibold">
+                    <span className="text-[11px] font-bold text-[#1C1917]">
                       {isRoomClosed
                         ? 'Room Closed'
                         : wsConnected
@@ -1426,7 +1379,7 @@ export const NegotiationWorkspace: React.FC = () => {
                         : 'Connecting...'}
                     </span>
                   </div>
-                  <span className="text-[10px] text-outline">
+                  <span className="text-[10px] text-[#78716C] font-semibold">
                     Capacity: {activePartyCount} / 2
                   </span>
                 </div>
@@ -1434,12 +1387,12 @@ export const NegotiationWorkspace: React.FC = () => {
                 {/* Bilateral Message Feed */}
                 <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
                   {bilateralEvents.length === 0 ? (
-                    <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-1 my-auto">
-                      <span className="material-symbols-outlined text-outline text-2xl">forum</span>
-                      <p className="font-mono text-xs text-on-surface-variant font-semibold">
+                    <div className="p-4 bg-[#EDE7DC] rounded border border-[#D6CEBE] text-center space-y-1 my-auto">
+                      <span className="material-symbols-outlined text-[#78716C] text-2xl">forum</span>
+                      <p className="font-mono text-xs text-[#1C1917] font-bold">
                         2-Party Deliberation Channel
                       </p>
-                      <p className="text-[11px] text-outline">
+                      <p className="text-[11px] text-[#78716C]">
                         Send messages or clause proposals directly to your counterparty counsel over WebSocket.
                       </p>
                     </div>
@@ -1448,7 +1401,7 @@ export const NegotiationWorkspace: React.FC = () => {
                       if (evt.type === 'join') {
                         return (
                           <div key={idx} className="text-center my-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/15 text-secondary border border-secondary/30">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#DCFCE7] text-[#166534] border border-[#86EFAC] font-bold">
                               {evt.sender_name || 'Counsel'} ({evt.sender_role || 'party'}) joined
                             </span>
                           </div>
@@ -1458,7 +1411,7 @@ export const NegotiationWorkspace: React.FC = () => {
                       if (evt.type === 'leave') {
                         return (
                           <div key={idx} className="text-center my-1.5">
-                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-[#FEF3C7] text-[#92400E] border border-[#FCD34D] font-bold">
                               {evt.sender_name || 'Counsel'} ({evt.sender_role || 'party'}) left room
                             </span>
                           </div>
@@ -1478,12 +1431,12 @@ export const NegotiationWorkspace: React.FC = () => {
 
                       if (evt.type === 'proposal' || evt.type === 'clause_submitted') {
                         return (
-                          <div key={idx} className="p-2.5 rounded-lg border border-primary/40 bg-primary-container/10 space-y-1 shadow-xs">
-                            <div className="flex items-center justify-between text-[10px] font-mono text-primary font-bold">
+                          <div key={idx} className="p-2.5 rounded-lg border border-[#FCD34D] bg-[#FEF3C7] space-y-1 shadow-xs">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-[#92400E] font-bold">
                               <span>PROPOSAL: {evt.clause_id}</span>
                               <span>{evt.sender_name}</span>
                             </div>
-                            <p className="text-xs font-serif italic text-on-surface">
+                            <p className="text-xs font-serif italic text-[#1C1917]">
                               "{evt.proposal || evt.text}"
                             </p>
                           </div>
@@ -1500,16 +1453,16 @@ export const NegotiationWorkspace: React.FC = () => {
                             isOwn ? 'ml-auto items-end' : 'mr-auto items-start'
                           }`}
                         >
-                          <div className="flex items-center gap-1 text-[10px] font-mono text-outline mb-0.5">
-                            <span>{evt.sender_name || 'Counsel'}</span>
+                          <div className="flex items-center gap-1 text-[10px] font-mono text-[#78716C] mb-0.5">
+                            <span className="font-semibold">{evt.sender_name || 'Counsel'}</span>
                             <span>•</span>
                             <span>{new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
                           <div
                             className={`p-2.5 rounded-lg text-xs leading-relaxed ${
                               isOwn
-                                ? 'bg-primary text-on-primary rounded-tr-none'
-                                : 'bg-surface-container-high text-on-surface rounded-tl-none border border-outline-variant/30'
+                                ? 'bg-[#D97706] text-white rounded-tr-none font-medium'
+                                : 'bg-[#EDE7DC] text-[#1C1917] rounded-tl-none border border-[#D6CEBE]'
                             }`}
                           >
                             {evt.text}
@@ -1534,7 +1487,7 @@ export const NegotiationWorkspace: React.FC = () => {
                 </Button>
 
                 {/* Chat Message Input Form */}
-                <form onSubmit={handleSendBilateralMessage} className="flex gap-2 pt-1 shrink-0 border-t border-outline-variant/20">
+                <form onSubmit={handleSendBilateralMessage} className="flex gap-2 pt-2 shrink-0 border-t border-[#D6CEBE]">
                   <input
                     type="text"
                     value={chatInput}
@@ -1547,7 +1500,7 @@ export const NegotiationWorkspace: React.FC = () => {
                         : 'Message counterparty counsel...'
                     }
                     disabled={isRoomClosed || !wsConnected}
-                    className="flex-1 bg-surface-container border border-outline-variant/40 rounded px-2.5 py-1.5 text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
+                    className="flex-1 bg-[#FAF7F2] border-2 border-[#D6CEBE] rounded px-2.5 py-1.5 text-xs text-[#1C1917] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#D97706] transition-colors"
                   />
                   <Button
                     variant="primary"
@@ -1563,23 +1516,23 @@ export const NegotiationWorkspace: React.FC = () => {
             ) : (
               /* TAB 2: AI PIPELINE DELIBERATION STREAM (SSE) - UNCHANGED */
               <>
-                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
+                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-[#EDE7DC] rounded border border-[#D6CEBE] font-mono text-xs text-[#1C1917] shrink-0">
                   <span className={`w-2 h-2 rounded-full shrink-0 ${
-                    liveStatus === 'PENDING HUMAN REVIEW' ? 'bg-amber-500' : 'bg-primary animate-pulse'
+                    liveStatus === 'PENDING HUMAN REVIEW' ? 'bg-[#D97706]' : 'bg-[#166534] animate-pulse'
                   }`} />
-                  <span className="truncate font-semibold text-primary">{liveStatus}</span>
+                  <span className="truncate font-bold text-[#1C1917]">{liveStatus}</span>
                 </div>
 
                 <div className="flex-1 overflow-y-auto space-y-3 pr-1">
                   {deliberationEvents.length === 0 ? (
-                    <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-2">
-                      <span className="material-symbols-outlined text-outline text-2xl animate-spin">
+                    <div className="p-4 bg-[#EDE7DC] rounded border border-[#D6CEBE] text-center space-y-2">
+                      <span className="material-symbols-outlined text-[#D97706] text-2xl animate-spin">
                         sync
                       </span>
-                      <p className="font-mono text-xs text-on-surface-variant font-semibold">
+                      <p className="font-mono text-xs text-[#1C1917] font-bold">
                         Initializing real-time deliberation stream...
                       </p>
-                      <p className="font-body-sm text-[11px] text-outline">
+                      <p className="font-body-sm text-[11px] text-[#78716C]">
                         Agent 1, Agent 2, and Arbiter-3 are parsing uploaded Party A & Party B documents.
                       </p>
                     </div>
@@ -1616,66 +1569,66 @@ export const NegotiationWorkspace: React.FC = () => {
                           key={evt.eventId || evt.event_id || `delib-${idx}`}
                           className={`p-3 rounded border text-xs leading-relaxed space-y-2 transition-all ${
                             isA1
-                              ? 'bg-blue-500/5 border-blue-500/20 text-on-surface'
+                              ? 'bg-[#EFF6FF] border-[#93C5FD] text-[#1C1917]'
                               : isA2
-                              ? 'bg-amber-500/5 border-amber-500/20 text-on-surface'
+                              ? 'bg-[#FFFBEB] border-[#FCD34D] text-[#1C1917]'
                               : isA3
-                              ? 'bg-emerald-500/5 border-emerald-500/30 text-on-surface shadow-xs'
-                              : 'bg-surface-container-high/40 border-amber-500/40 text-on-surface'
+                              ? 'bg-[#F0FDF4] border-[#86EFAC] text-[#1C1917] shadow-xs'
+                              : 'bg-[#FEF3C7] border-[#FCD34D] text-[#1C1917]'
                           }`}
                         >
-                          <div className="flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/10">
+                          <div className="flex items-center justify-between gap-1 pb-1 border-b border-[#D6CEBE]">
                             <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold">
                               <span
                                 className={`w-2 h-2 rounded-full ${
                                   isA1
-                                    ? 'bg-blue-400'
+                                    ? 'bg-[#3B82F6]'
                                     : isA2
-                                    ? 'bg-amber-400'
+                                    ? 'bg-[#D97706]'
                                     : isA3
-                                    ? 'bg-emerald-400'
-                                    : 'bg-amber-500'
+                                    ? 'bg-[#166534]'
+                                    : 'bg-[#D97706]'
                                 }`}
                               />
                               <span
-                                className={
+                                className={`font-bold ${
                                   isA1
-                                    ? 'text-blue-400'
+                                    ? 'text-[#1D4ED8]'
                                     : isA2
-                                    ? 'text-amber-400'
+                                    ? 'text-[#92400E]'
                                     : isA3
-                                    ? 'text-emerald-400'
-                                    : 'text-amber-500'
-                                }
+                                    ? 'text-[#166534]'
+                                    : 'text-[#92400E]'
+                                }`}
                               >
                                 {evt.agentName || evt.agent_name || (isA1 ? 'Lex-Ingestor A' : isA2 ? 'Lex-Ingestor B' : isA3 ? 'Arbiter-3' : 'System Orchestrator')}
                               </span>
                             </div>
 
-                            <div className="flex items-center gap-1.5 font-mono text-[10px] text-outline">
+                            <div className="flex items-center gap-1.5 font-mono text-[10px] text-[#78716C]">
                               {evt.source && (
-                                <span className="px-1 py-0.2 bg-surface-container-high rounded text-[9px] font-semibold text-outline">
+                                <span className="px-1 py-0.5 bg-[#EDE7DC] rounded text-[9px] font-bold text-[#78716C] border border-[#D6CEBE]">
                                   {evt.source}
                                 </span>
                               )}
-                              <span>{formattedTime}</span>
+                              <span className="font-semibold">{formattedTime}</span>
                             </div>
                           </div>
 
-                          <p className="font-body-sm text-xs font-normal text-on-surface text-balance">
+                          <p className="font-body-sm text-xs font-normal text-[#1C1917] leading-relaxed">
                             {evt.message}
                           </p>
 
                           {(evt.clauseIds?.length || evt.clause_ids?.length) ? (
                             <div className="flex flex-wrap items-center gap-1 pt-1">
-                              <span className="font-mono text-[10px] text-outline font-semibold">
+                              <span className="font-mono text-[10px] text-[#78716C] font-bold">
                                 Affected Clauses:
                               </span>
                               {(evt.clauseIds || evt.clause_ids || []).map((cid) => (
                                 <button
                                   key={cid}
                                   onClick={() => handleClauseClick(cid)}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-surface-container-high hover:bg-surface-container text-on-surface font-mono text-[10px] rounded border border-outline-variant/30 transition-colors"
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#EDE7DC] hover:bg-[#D6CEBE] text-[#1C1917] font-mono text-[10px] rounded border border-[#D6CEBE] transition-colors font-semibold"
                                 >
                                   <span className="material-symbols-outlined text-[10px]">link</span>
                                   <span>{cid}</span>
@@ -1685,44 +1638,44 @@ export const NegotiationWorkspace: React.FC = () => {
                           ) : null}
 
                           {(typeof evt.riskScore === 'number' || typeof evt.risk_score === 'number') && (
-                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/30 rounded font-mono text-[10px] font-bold">
+                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-[#FEE2E2] text-[#991B1B] border border-[#FCA5A5] rounded font-mono text-[10px] font-bold">
                               <span>Risk: {(evt.riskScore ?? evt.risk_score)?.toFixed(1)}/10</span>
                             </div>
                           )}
 
                           {isA3 && (
-                            <div className="space-y-1.5 pt-1 border-t border-outline-variant/15 font-body-sm text-[11px]">
+                            <div className="space-y-1.5 pt-1 border-t border-[#D6CEBE] font-body-sm text-[11px]">
                               {(evt.legalImpact || evt.legal_impact) && (
-                                <div className="p-1.5 bg-red-500/5 border border-red-500/20 rounded space-y-0.5">
-                                  <span className="font-mono text-[10px] font-bold text-red-400 flex items-center gap-1 uppercase">
+                                <div className="p-1.5 bg-[#FEE2E2] border border-[#FCA5A5] rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-[#991B1B] flex items-center gap-1 uppercase">
                                     <span className="material-symbols-outlined text-[12px]">gavel</span>
                                     Legal Exposure
                                   </span>
-                                  <p className="text-on-surface-variant text-[11px]">
+                                  <p className="text-[#44403C] text-[11px]">
                                     {evt.legalImpact || evt.legal_impact}
                                   </p>
                                 </div>
                               )}
 
                               {(evt.commercialImpact || evt.commercial_impact) && (
-                                <div className="p-1.5 bg-emerald-500/5 border border-emerald-500/20 rounded space-y-0.5">
-                                  <span className="font-mono text-[10px] font-bold text-emerald-400 flex items-center gap-1 uppercase">
+                                <div className="p-1.5 bg-[#DCFCE7] border border-[#86EFAC] rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-[#166534] flex items-center gap-1 uppercase">
                                     <span className="material-symbols-outlined text-[12px]">trending_up</span>
                                     Commercial Impact
                                   </span>
-                                  <p className="text-on-surface-variant text-[11px]">
+                                  <p className="text-[#44403C] text-[11px]">
                                     {evt.commercialImpact || evt.commercial_impact}
                                   </p>
                                 </div>
                               )}
 
                               {evt.recommendation && (
-                                <div className="p-1.5 bg-amber-500/10 border border-amber-500/30 rounded space-y-0.5">
-                                  <span className="font-mono text-[10px] font-bold text-amber-500 flex items-center gap-1 uppercase">
+                                <div className="p-1.5 bg-[#FEF3C7] border border-[#FCD34D] rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-[#92400E] flex items-center gap-1 uppercase">
                                     <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
                                     Recommended Compromise
                                   </span>
-                                  <p className="text-on-surface font-medium text-[11px]">
+                                  <p className="text-[#1C1917] font-semibold text-[11px]">
                                     {evt.recommendation}
                                   </p>
                                 </div>
@@ -1731,12 +1684,12 @@ export const NegotiationWorkspace: React.FC = () => {
                           )}
 
                           {isOrchestrator && (
-                            <div className="p-2 bg-amber-500/15 border border-amber-500/40 rounded space-y-1">
-                              <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-amber-400 uppercase">
+                            <div className="p-2 bg-[#FEF3C7] border border-[#FCD34D] rounded space-y-1">
+                              <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-[#92400E] uppercase">
                                 <span className="material-symbols-outlined text-sm">verified_user</span>
                                 <span>STATUS: PENDING HUMAN REVIEW</span>
                               </div>
-                              <p className="font-body-sm text-[11px] text-on-surface-variant">
+                              <p className="font-body-sm text-[11px] text-[#44403C]">
                                 Deliberation complete. Recommendations staged. General Counsel review required before execution.
                               </p>
                             </div>
@@ -1747,17 +1700,17 @@ export const NegotiationWorkspace: React.FC = () => {
                   )}
                 </div>
 
-                <div className="p-2.5 bg-surface-container-low border border-amber-500/30 rounded text-xs space-y-1 shrink-0">
-                  <div className="flex items-center justify-between font-mono text-[11px] font-bold text-amber-500">
+                <div className="p-2.5 bg-[#FEF3C7] border border-[#FCD34D] rounded text-xs space-y-1 shrink-0">
+                  <div className="flex items-center justify-between font-mono text-[11px] font-bold text-[#92400E]">
                     <span className="flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs">gavel</span>
                       HUMAN REVIEW BOUNDARY
                     </span>
-                    <span className="bg-amber-500/20 px-1.5 py-0.5 rounded text-[9px] uppercase">
+                    <span className="bg-[#D97706] text-white px-1.5 py-0.5 rounded text-[9px] uppercase font-bold">
                       UNSEALED
                     </span>
                   </div>
-                  <p className="font-body-sm text-[10px] text-on-surface-variant leading-tight">
+                  <p className="font-body-sm text-[10px] text-[#78716C] leading-tight">
                     AI agents generate compromises based on matter files. General Counsel sign-off is required.
                   </p>
                 </div>
@@ -1766,7 +1719,7 @@ export const NegotiationWorkspace: React.FC = () => {
           </div>
 
           {/* Action Bottom Cluster */}
-          <div className="space-y-2 pt-space-xs border-t border-outline-variant/20 shrink-0">
+          <div className="space-y-2 pt-2 border-t border-[#D6CEBE] shrink-0">
             <Button
               variant="primary"
               size="md"

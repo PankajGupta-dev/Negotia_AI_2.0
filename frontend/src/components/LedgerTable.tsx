@@ -26,14 +26,14 @@ export function LedgerTable<T>({
   className = '',
 }: LedgerTableProps<T>) {
   return (
-    <div className={`w-full overflow-x-auto border border-outline-variant/30 rounded ${className}`}>
+    <div className={`w-full overflow-x-auto border border-[#D6CEBE] rounded-lg shadow-xs ${className}`}>
       <table className="w-full text-left border-collapse select-none">
         <thead>
-          <tr className="bg-surface-container-low border-b border-outline-variant/30 text-outline font-label-sm text-label-sm uppercase tracking-wider">
+          <tr className="bg-[#EDE7DC] border-b border-[#D6CEBE] text-[#1C1917] font-mono text-xs uppercase tracking-wider">
             {columns.map((col) => (
               <th
                 key={col.key}
-                className={`py-3 px-space-base font-semibold ${
+                className={`py-3 px-4 font-bold ${
                   col.align === 'right'
                     ? 'text-right'
                     : col.align === 'center'
@@ -46,12 +46,12 @@ export function LedgerTable<T>({
             ))}
           </tr>
         </thead>
-        <tbody className="divide-y divide-outline-variant/20 bg-surface-container-lowest font-body-sm text-body-sm">
+        <tbody className="divide-y divide-[#D6CEBE]/60 bg-[#FAF7F2] font-body-sm text-sm">
           {data.length === 0 ? (
             <tr>
               <td
                 colSpan={columns.length}
-                className="py-8 text-center text-outline italic font-body-md"
+                className="py-8 text-center text-[#78716C] italic font-body-md"
               >
                 {emptyMessage}
               </td>
@@ -63,14 +63,14 @@ export function LedgerTable<T>({
                 onClick={() => onRowClick && onRowClick(item)}
                 className={`transition-colors ${
                   onRowClick
-                    ? 'cursor-pointer hover:bg-surface-container-low/70'
-                    : 'hover:bg-surface-container-low/30'
+                    ? 'cursor-pointer hover:bg-[#EDE7DC]/70'
+                    : 'hover:bg-[#EDE7DC]/40'
                 }`}
               >
                 {columns.map((col) => (
                   <td
                     key={col.key}
-                    className={`py-3 px-space-base text-on-surface align-middle ${
+                    className={`py-3 px-4 text-[#1C1917] align-middle ${
                       col.align === 'right'
                         ? 'text-right'
                         : col.align === 'center'

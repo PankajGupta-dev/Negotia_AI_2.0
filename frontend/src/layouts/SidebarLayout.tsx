@@ -32,7 +32,6 @@ export const SidebarLayout: React.FC = () => {
     : `/negotiations/${activeMatterId}`;
 
   const NAV_ITEMS: NavItem[] = [
-    { name: 'Operations Command', path: '/dashboard', icon: 'dashboard' },
     { name: 'Contract Intake', path: '/intake', icon: 'upload_file' },
     {
       name: 'Live Agent Pipeline',
@@ -53,10 +52,10 @@ export const SidebarLayout: React.FC = () => {
       path: '/private-room',
       icon: 'lock',
       badge: activePrivateRoomId ? 'ACTIVE' : '2P',
-      badgeTone: activePrivateRoomId ? 'forest' : 'forest',
+      badgeTone: activePrivateRoomId ? 'forest' : 'amber',
     },
     { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
-    { name: 'Executive Report', path: `/reports/${activeMatterId}`, icon: 'description' },
+    { name: 'Executive Report', path: '/reports', icon: 'description' },
     { name: 'Audit and Governance', path: '/governance', icon: 'verified_user' },
   ];
 
@@ -116,7 +115,7 @@ export const SidebarLayout: React.FC = () => {
           {/* Logo & Brand Header */}
           <div className="h-16 px-space-base border-b border-outline-variant/30 flex items-center justify-between">
             <NavLink
-              to="/dashboard"
+              to="/intake"
               className="flex items-center gap-space-sm group"
               onClick={() => setMobileOpen(false)}
             >
@@ -186,10 +185,12 @@ export const SidebarLayout: React.FC = () => {
 
                   {item.badge ? (
                     <span
-                      className={`font-label-sm text-[10px] px-1.5 py-0.5 rounded border uppercase font-mono tracking-widest shrink-0 ${
+                      className={`font-label-sm text-[10px] px-2 py-0.5 rounded border uppercase font-mono font-bold tracking-widest shrink-0 ${
                         item.badgeTone === 'rust'
                           ? 'bg-error-container text-on-error-container border-error/30'
-                          : 'bg-primary-container/20 text-primary border-primary/30'
+                          : item.badgeTone === 'forest'
+                          ? 'bg-[#166534] text-[#DCFCE7] border-[#86EFAC]'
+                          : 'bg-[#D97706] text-[#161311] border-[#B45309] shadow-xs'
                       }`}
                     >
                       {item.badge}
