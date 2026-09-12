@@ -39,6 +39,32 @@ def store_agent_run(
     db.add(run)
     db.commit()
     db.refresh(run)
+
+    # Sync to MongoDB Atlas collection 'agent_runs'
+    try:
+        from app.db.database import get_collection, COLLECTION_AGENT_RUNS
+        coll = get_collection(COLLECTION_AGENT_RUNS)
+        import asyncio
+        run_record = {
+            "id": run_id,
+            "matter_id": matter_id,
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+            "technical_name": technical_name,
+            "status": status_str,
+            "thoughts": thoughts or [],
+            "result": result,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": None,
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coll.replace_one({"id": run_id}, run_record, upsert=True))
+        except RuntimeError:
+            asyncio.run(coll.replace_one({"id": run_id}, run_record, upsert=True))
+    except Exception:
+        pass
+
     return run
 
 
@@ -95,6 +121,30 @@ def store_agent_status(
 
     db.commit()
     db.refresh(run)
+
+    # Sync to MongoDB Atlas
+    try:
+        from app.db.database import get_collection, COLLECTION_AGENT_RUNS
+        coll = get_collection(COLLECTION_AGENT_RUNS)
+        import asyncio
+        update_fields: dict = {
+            "status": status_str,
+            "thoughts": list(run.thoughts) if run.thoughts else [],
+        }
+        if run.started_at:
+            update_fields["started_at"] = run.started_at.isoformat()
+        if run.completed_at:
+            update_fields["completed_at"] = run.completed_at.isoformat()
+        if result is not None:
+            update_fields["result"] = result
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coll.update_one({"id": run.id}, {"$set": update_fields}, upsert=True))
+        except RuntimeError:
+            asyncio.run(coll.update_one({"id": run.id}, {"$set": update_fields}, upsert=True))
+    except Exception:
+        pass
+
     return run
 
 

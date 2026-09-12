@@ -233,12 +233,14 @@ export const SidebarLayout: React.FC = () => {
               <div className="flex items-center gap-1 shrink-0">
                 <span
                   className={`font-label-sm text-[9px] px-1.5 py-0.5 rounded border uppercase tracking-wider font-mono font-semibold ${
-                    activeRole === 'buyer'
+                    activeRole === 'unified_demo'
+                      ? 'text-[#D97706] bg-[#FEF3C7] border-[#FCD34D]'
+                      : activeRole === 'buyer'
                       ? 'text-primary bg-primary-container/20 border-primary/30'
                       : 'text-secondary bg-secondary-container/20 border-secondary/30'
                   }`}
                 >
-                  {activeRole === 'buyer' ? 'Buyer' : 'Seller'}
+                  {activeRole === 'unified_demo' ? 'Unified' : activeRole === 'buyer' ? 'Buyer' : 'Seller'}
                 </span>
                 <span className={`material-symbols-outlined text-outline text-[14px] transition-transform duration-200 ${profileOpen ? 'rotate-180' : ''}`}>
                   expand_less
@@ -279,34 +281,48 @@ export const SidebarLayout: React.FC = () => {
                 {/* Role Switcher */}
                 <div className="px-3 py-2.5 border-b border-outline-variant/20">
                   <p className="font-mono text-[9px] uppercase text-outline tracking-widest mb-2">Switch Negotiation Role</p>
-                  <div className="grid grid-cols-2 gap-1.5">
+                  <div className="grid grid-cols-3 gap-1">
                     <button
                       type="button"
                       id="switch-buyer-btn"
                       onClick={() => handleSwitchRole('buyer')}
-                      className={`flex flex-col items-center gap-0.5 py-2 px-2 rounded-lg border transition-all duration-150 ${
+                      className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg border transition-all duration-150 ${
                         activeRole === 'buyer'
                           ? 'border-primary/60 bg-primary-container/15 text-primary'
                           : 'border-outline-variant/30 bg-surface-container-lowest hover:border-primary/40 text-on-surface-variant hover:text-on-surface'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[18px]">business_center</span>
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider">Buyer</span>
-                      <span className="text-[8px] text-outline">Party A</span>
+                      <span className="material-symbols-outlined text-[16px]">business_center</span>
+                      <span className="font-mono text-[8.5px] font-bold uppercase tracking-wider">Buyer</span>
+                      <span className="text-[7.5px] text-outline">Party A</span>
                     </button>
                     <button
                       type="button"
                       id="switch-seller-btn"
                       onClick={() => handleSwitchRole('seller')}
-                      className={`flex flex-col items-center gap-0.5 py-2 px-2 rounded-lg border transition-all duration-150 ${
+                      className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg border transition-all duration-150 ${
                         activeRole === 'seller'
                           ? 'border-secondary/60 bg-secondary-container/15 text-secondary'
                           : 'border-outline-variant/30 bg-surface-container-lowest hover:border-secondary/40 text-on-surface-variant hover:text-on-surface'
                       }`}
                     >
-                      <span className="material-symbols-outlined text-[18px]">handshake</span>
-                      <span className="font-mono text-[9px] font-bold uppercase tracking-wider">Seller</span>
-                      <span className="text-[8px] text-outline">Party B</span>
+                      <span className="material-symbols-outlined text-[16px]">handshake</span>
+                      <span className="font-mono text-[8.5px] font-bold uppercase tracking-wider">Seller</span>
+                      <span className="text-[7.5px] text-outline">Party B</span>
+                    </button>
+                    <button
+                      type="button"
+                      id="switch-unified-btn"
+                      onClick={() => handleSwitchRole('unified_demo')}
+                      className={`flex flex-col items-center gap-0.5 py-2 px-1 rounded-lg border transition-all duration-150 ${
+                        activeRole === 'unified_demo'
+                          ? 'border-[#D97706] bg-[#FEF3C7] text-[#92400E]'
+                          : 'border-outline-variant/30 bg-surface-container-lowest hover:border-[#D97706]/40 text-on-surface-variant hover:text-on-surface'
+                      }`}
+                    >
+                      <span className="material-symbols-outlined text-[16px]">balance</span>
+                      <span className="font-mono text-[8.5px] font-bold uppercase tracking-wider">Unified</span>
+                      <span className="text-[7.5px] text-outline">Both</span>
                     </button>
                   </div>
                 </div>

@@ -212,7 +212,7 @@ export const Login: React.FC = () => {
     }, 600);
   };
 
-  const handleDemoLogin = (preset: 'buyer_demo' | 'seller_demo') => {
+  const handleDemoLogin = (preset: 'buyer_demo' | 'seller_demo' | 'unified_demo') => {
     setIsLoggingIn(true);
     setTimeout(() => {
       loginAsPreset(preset);
@@ -295,7 +295,37 @@ export const Login: React.FC = () => {
               <div className="flex-1 h-px bg-outline-variant/20" />
             </div>
 
-            {/* DEMO LOGINS */}
+            {/* UNIFIED DEMO PROFILE (Full Buyer + Seller Access) */}
+            <button
+              type="button"
+              id="demo-unified-btn"
+              onClick={() => handleDemoLogin('unified_demo')}
+              className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-primary-container/20 via-surface-container-lowest to-secondary-container/20 hover:from-primary-container/30 hover:to-secondary-container/30 border border-primary/40 hover:border-primary rounded-lg transition-all duration-150 group shadow-sm"
+            >
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center font-serif text-primary font-bold text-xs shrink-0">
+                  ND
+                </div>
+                <div className="flex flex-col items-start text-left">
+                  <div className="flex items-center gap-2">
+                    <span className="font-semibold text-xs text-on-surface group-hover:text-white transition-colors">
+                      Negotiation Demo
+                    </span>
+                    <span className="font-mono text-[9px] px-1.5 py-0.2 bg-primary/20 text-primary border border-primary/30 rounded font-bold uppercase">
+                      Unified Counsel
+                    </span>
+                  </div>
+                  <span className="font-mono text-[10px] text-outline">
+                    Full Buyer + Seller access · Bilateral Workspace
+                  </span>
+                </div>
+              </div>
+              <span className="material-symbols-outlined text-primary text-sm shrink-0 group-hover:translate-x-0.5 transition-transform">
+                arrow_forward
+              </span>
+            </button>
+
+            {/* SEPARATE BUYER & SELLER DEMO LOGINS */}
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"

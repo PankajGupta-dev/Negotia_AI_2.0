@@ -318,6 +318,24 @@ class AuditService:
         db.commit()
         db.refresh(record)
 
+        # Sync to MongoDB Atlas collection 'audit_blocks'
+        try:
+            from app.db.database import COLLECTION_AUDIT_BLOCKS, sync_mongo_doc
+            audit_doc = {
+                "id": block_id,
+                "matter_id": matter_id,
+                "report_id": report_id,
+                "timestamp": ts.isoformat(),
+                "actor": actor,
+                "action": action,
+                "details": details_store,
+                "sha256_hash": current_hash,
+                "previous_hash": previous_hash,
+            }
+            sync_mongo_doc(COLLECTION_AUDIT_BLOCKS, {"id": block_id}, audit_doc)
+        except Exception:
+            pass
+
         logger.info(
             f"Appended audit block '{block_id}' for matter {matter_id}. "
             f"Previous: {previous_hash[:12]}... Current: {current_hash[:12]}..."
@@ -458,6 +476,50 @@ class AuditService:
         db.commit()
         db.refresh(report)
         db.refresh(matter)
+
+        # Sync to MongoDB Atlas collections 'audit_blocks', 'reports', 'matters'
+        try:
+            from app.db.database import (
+                COLLECTION_AUDIT_BLOCKS,
+                COLLECTION_MATTERS,
+                COLLECTION_REPORTS,
+                sync_mongo_doc,
+            )
+            seal_doc = {
+                "id": record_id,
+                "matter_id": matter_id,
+                "report_id": report.id,
+                "timestamp": ts.isoformat(),
+                "actor": counsel_name,
+                "action": "cryptographic_seal_anchored",
+                "details": details_store,
+                "sha256_hash": current_hash,
+                "previous_hash": previous_hash,
+            }
+            sync_mongo_doc(COLLECTION_AUDIT_BLOCKS, {"id": record_id}, seal_doc)
+
+            report_doc = {
+                "id": report.id,
+                "matter_id": matter_id,
+                "docket_number": matter.docket_number,
+                "review_status": report.review_status,
+                "attestation_hash": payload_hash,
+                "block_digest": current_hash,
+                "updated_at": ts.isoformat(),
+                "is_sealed": True,
+            }
+            sync_mongo_doc(COLLECTION_REPORTS, {"id": report.id}, report_doc)
+
+            matter_doc = {
+                "id": matter_id,
+                "stage": matter.stage,
+                "status": matter.status,
+                "lead_counsel": counsel_name,
+                "updated_at": ts.isoformat(),
+            }
+            sync_mongo_doc(COLLECTION_MATTERS, {"id": matter_id}, matter_doc)
+        except Exception:
+            pass
 
         # 12. Count audit chain length
         chain_len = db.query(AuditRecordDB).filter(AuditRecordDB.matter_id == matter_id).count()

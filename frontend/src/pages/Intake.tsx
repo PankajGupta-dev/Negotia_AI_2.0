@@ -40,15 +40,16 @@ This Agreement shall be governed by Delaware law and adjudicated exclusively in 
 
 export const Intake: React.FC = () => {
   const navigate = useNavigate();
-  const { user, role } = useAuth();
+  const { user, role, isUnifiedDemo } = useAuth();
   const fileInputARef = useRef<HTMLInputElement>(null);
   const fileInputBRef = useRef<HTMLInputElement>(null);
 
   // Role-based upload permissions
   // Buyer (Party A) → uploads baseline only
   // Seller (Party B) → uploads counterparty redline only
-  const canUploadBaseline = role === 'buyer';
-  const canUploadRedline = role === 'seller';
+  // Unified Demo → unrestricted bilateral access (both Party A and Party B)
+  const canUploadBaseline = role === 'buyer' || role === 'unified_demo' || isUnifiedDemo;
+  const canUploadRedline = role === 'seller' || role === 'unified_demo' || isUnifiedDemo;
 
   const [selectedPreset, setSelectedPreset] = useState<'msa' | 'dpa' | 'ip' | 'custom'>('msa');
   const [fileA, setFileA] = useState<File | null>(null);
@@ -209,20 +210,28 @@ export const Intake: React.FC = () => {
           {/* Role-based Access Banner */}
           {user && (
             <div className={`flex items-center gap-3 px-4 py-2.5 rounded border mb-4 ${
-              role === 'buyer'
+              role === 'unified_demo' || isUnifiedDemo
+                ? 'bg-[#FEF3C7] border-[#D97706]/50 text-[#92400E]'
+                : role === 'buyer'
                 ? 'bg-primary-container/10 border-primary/30 text-primary'
                 : 'bg-secondary-container/10 border-secondary/30 text-secondary'
             }`}>
               <span className="material-symbols-outlined text-[20px] shrink-0">
-                {role === 'buyer' ? 'business_center' : 'handshake'}
+                {role === 'unified_demo' || isUnifiedDemo ? 'balance' : role === 'buyer' ? 'business_center' : 'handshake'}
               </span>
               <div className="text-xs font-mono">
                 <span className="font-bold uppercase tracking-widest">
-                  {role === 'buyer' ? 'Buyer (Party A)' : 'Seller (Party B)'}
+                  {role === 'unified_demo' || isUnifiedDemo
+                    ? 'Unified Counsel (Party A + Party B Simultaneous Access)'
+                    : role === 'buyer'
+                    ? 'Buyer (Party A)'
+                    : 'Seller (Party B)'}
                 </span>
                 {' · '}
                 <span className="text-[#78716C]">
-                  {role === 'buyer'
+                  {role === 'unified_demo' || isUnifiedDemo
+                    ? 'Bilateral Demonstration Workspace active. You have unrestricted access to upload both Firm Baseline (Doc A) and Counterparty Markup (Doc B).'
+                    : role === 'buyer'
                     ? 'You may upload the Firm Baseline Agreement (Document A). Counterparty redline is locked to Seller role.'
                     : 'You may upload the Counterparty Markup (Document B). Firm Baseline is locked to Buyer role.'}
                 </span>

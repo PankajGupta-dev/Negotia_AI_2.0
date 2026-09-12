@@ -4,7 +4,7 @@ import React, { createContext, useContext, useState, useEffect, useCallback } fr
 // Types
 // ──────────────────────────────────────────────────────────────────────────────
 
-export type UserRole = 'buyer' | 'seller';
+export type UserRole = 'buyer' | 'seller' | 'unified_demo';
 export type AuthProvider = 'google' | 'enterprise';
 
 export interface UserProfile {
@@ -28,8 +28,9 @@ interface AuthContextValue {
   isLoading: boolean;
   isAuthenticated: boolean;
   role: UserRole;
+  isUnifiedDemo: boolean;
   loginWithGoogle: (googleProfile: GoogleProfile) => void;
-  loginAsPreset: (preset: 'buyer_demo' | 'seller_demo') => void;
+  loginAsPreset: (preset: 'buyer_demo' | 'seller_demo' | 'unified_demo') => void;
   switchRole: (role: UserRole) => void;
   logout: () => void;
   updateProfile: (updates: Partial<UserProfile>) => void;
@@ -68,16 +69,40 @@ function buildProfile(googleProfile: GoogleProfile): UserProfile {
     avatar: googleProfile.avatar,
     initials: getInitials(googleProfile.name),
     role,
-    title: role === 'buyer' ? 'General Counsel & Procurement Lead' : 'Commercial Sales Counsel',
+    title:
+      role === 'unified_demo'
+        ? 'Unified Counsel'
+        : role === 'buyer'
+        ? 'General Counsel & Procurement Lead'
+        : 'Commercial Sales Counsel',
     company: googleProfile.email.split('@')[1]?.split('.')[0]?.replace(/-/g, ' ') || 'Enterprise',
     provider: 'google',
     verified: true,
-    authorityLevel: role === 'buyer' ? 'Level 3 ($5M ARR Threshold)' : 'Level 2 ($2M ARR Threshold)',
+    authorityLevel:
+      role === 'unified_demo'
+        ? 'Bilateral Executive Signer (Full Access)'
+        : role === 'buyer'
+        ? 'Level 3 ($5M ARR Threshold)'
+        : 'Level 2 ($2M ARR Threshold)',
     joinedAt: new Date().toISOString(),
   };
 }
 
 const DEMO_PROFILES: Record<string, UserProfile> = {
+  unified_demo: {
+    uid: 'demo-unified-001',
+    name: 'Negotiation Demo',
+    firstName: 'Negotiation',
+    email: 'unified.demo@negotia.ai',
+    initials: 'ND',
+    role: 'unified_demo',
+    title: 'Unified Counsel',
+    company: 'Bilateral Chamber',
+    provider: 'enterprise',
+    verified: true,
+    authorityLevel: 'Unrestricted Demonstration Access (Buyer + Seller)',
+    joinedAt: '2025-01-01T00:00:00Z',
+  },
   buyer_demo: {
     uid: 'demo-buyer-001',
     name: 'Elena Rostova',
@@ -147,7 +172,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     persist(profile);
   }, [persist]);
 
-  const loginAsPreset = useCallback((preset: 'buyer_demo' | 'seller_demo') => {
+  const loginAsPreset = useCallback((preset: 'buyer_demo' | 'seller_demo' | 'unified_demo') => {
     const profile = DEMO_PROFILES[preset];
     persist(profile);
   }, [persist]);
@@ -158,9 +183,18 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const updated: UserProfile = {
         ...prev,
         role,
-        title: role === 'buyer' ? 'General Counsel & Procurement Lead' : 'Commercial Sales Counsel',
+        title:
+          role === 'unified_demo'
+            ? 'Unified Counsel'
+            : role === 'buyer'
+            ? 'General Counsel & Procurement Lead'
+            : 'Commercial Sales Counsel',
         authorityLevel:
-          role === 'buyer' ? 'Level 3 ($5M ARR Threshold)' : 'Level 2 ($2M ARR Threshold)',
+          role === 'unified_demo'
+            ? 'Bilateral Executive Signer (Full Access)'
+            : role === 'buyer'
+            ? 'Level 3 ($5M ARR Threshold)'
+            : 'Level 2 ($2M ARR Threshold)',
       };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
       return updated;
@@ -180,13 +214,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     });
   }, []);
 
+  const activeRole: UserRole = user?.role ?? 'buyer';
+  const isUnifiedDemo = activeRole === 'unified_demo';
+
   return (
     <AuthContext.Provider
       value={{
         user,
         isLoading,
         isAuthenticated: !!user,
-        role: user?.role ?? 'buyer',
+        role: activeRole,
+        isUnifiedDemo,
         loginWithGoogle,
         loginAsPreset,
         switchRole,

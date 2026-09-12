@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     GEMINI_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     DATABASE_URL: str = "sqlite:///./negotia.db"
+    MONGODB_URI: str = ""
+    MONGODB_DATABASE: str = "negotia_ai"
     FRONTEND_URL: str = "http://localhost:5173"
     UPLOAD_DIR: str = "./uploads"
 

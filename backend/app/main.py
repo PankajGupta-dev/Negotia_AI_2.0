@@ -4,6 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
 from app.db import init_db
+from app.db.database import close_mongodb_connection, connect_to_mongodb
 from app.routers.contracts import router as contracts_router
 from app.routers.negotiations import router as negotiations_router
 from app.routers.pipeline import router as pipeline_router
@@ -13,9 +14,15 @@ from app.routers.sandbox import router as sandbox_router
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize SQLite database tables on startup
+    # 1. Connect to MongoDB Atlas and ping verification (fail clearly if unreachable)
+    await connect_to_mongodb()
+    # 2. Initialize database models/tables
     init_db()
-    yield
+    try:
+        yield
+    finally:
+        # Graceful shutdown of MongoDB Atlas client
+        await close_mongodb_connection()
 
 
 app = FastAPI(

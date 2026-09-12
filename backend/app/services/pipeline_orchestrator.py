@@ -1101,6 +1101,35 @@ class PipelineOrchestrator:
             )
 
         session.commit()
+
+        # Sync settled clauses to MongoDB Atlas collection 'clauses'
+        try:
+            from app.db.database import get_collection, COLLECTION_CLAUSES
+            coll = get_collection(COLLECTION_CLAUSES)
+            for sc in settled_clauses:
+                c_doc = {
+                    "id": sc.id,
+                    "clause_id": sc.id[len(f"{matter.id}_"):] if sc.id.startswith(f"{matter.id}_") else sc.id,
+                    "matter_id": matter.id,
+                    "section": sc.section,
+                    "title": sc.title,
+                    "original_text": sc.original_text,
+                    "counterparty_text": sc.counterparty_text,
+                    "conformed_proposal": sc.conformed_proposal,
+                    "risk_level": sc.risk_level.value if hasattr(sc.risk_level, "value") else str(sc.risk_level),
+                    "risk_score": sc.risk_score,
+                    "precedent_alignment": sc.precedent_alignment,
+                    "status": sc.status.value if hasattr(sc.status, "value") else str(sc.status),
+                    "rationale": sc.rationale,
+                }
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(coll.replace_one({"id": sc.id}, c_doc, upsert=True))
+                except RuntimeError:
+                    asyncio.run(coll.replace_one({"id": sc.id}, c_doc, upsert=True))
+        except Exception:
+            pass
+
         return neg_output, settled_clauses
 
     async def _run_agent3(
@@ -1175,6 +1204,31 @@ class PipelineOrchestrator:
                     result=out.model_dump(mode="json"),
                 )
                 s.commit()
+
+                # Sync verdicts to MongoDB Atlas collection 'verdicts'
+                try:
+                    from app.db.database import get_collection, COLLECTION_VERDICTS
+                    coll = get_collection(COLLECTION_VERDICTS)
+                    for v in out.verdicts:
+                        db_clause_id = f"{matter_id}_{v.clause_id}" if not v.clause_id.startswith(f"{matter_id}_") else v.clause_id
+                        verdict_id = f"v_{db_clause_id}"
+                        v_doc = {
+                            "id": verdict_id,
+                            "clause_id": db_clause_id,
+                            "legal_lens": v.legal_lens.legal_summary,
+                            "marketing_lens": v.commercial_lens.commercial_summary,
+                            "nash_equilibrium_clause": v.proposed_clause_text,
+                            "compromise_score": v.confidence,
+                            "sec_citations": v.evidence_cited or [],
+                        }
+                        try:
+                            loop = asyncio.get_running_loop()
+                            loop.create_task(coll.replace_one({"id": verdict_id}, v_doc, upsert=True))
+                        except RuntimeError:
+                            asyncio.run(coll.replace_one({"id": verdict_id}, v_doc, upsert=True))
+                except Exception:
+                    pass
+
                 return out
             finally:
                 s.close()
@@ -1277,11 +1331,13 @@ class PipelineOrchestrator:
                 # Record Audit Record in AuditRecordDB
                 from app.services.audit_service import AuditService, GENESIS_HASH
                 prev_audit_hash = AuditService.get_latest_hash(s, matter_id)
+                audit_id = f"audit_{uuid.uuid4().hex[:8]}"
+                audit_ts = datetime.utcnow()
                 audit_rec = AuditRecordDB(
-                    id=f"audit_{uuid.uuid4().hex[:8]}",
+                    id=audit_id,
                     matter_id=matter_id,
                     report_id=out.report.id if out.report else f"rep_{matter_id}",
-                    timestamp=datetime.utcnow(),
+                    timestamp=audit_ts,
                     actor="Scrivener-4",
                     action="executive_synthesis_and_audit_payload",
                     details=f"Generated canonical audit payload. Pre-attestation digest: {out.pre_attestation_hash}",
@@ -1296,6 +1352,49 @@ class PipelineOrchestrator:
                     result=out.model_dump(mode="json"),
                 )
                 s.commit()
+
+                # Sync report & audit block to MongoDB Atlas
+                try:
+                    from app.db.database import get_collection, COLLECTION_REPORTS, COLLECTION_AUDIT_BLOCKS
+                    rep_coll = get_collection(COLLECTION_REPORTS)
+                    aud_coll = get_collection(COLLECTION_AUDIT_BLOCKS)
+                    rep_id = out.report.id if out.report else f"rep_{matter_id}"
+                    rep_doc = {
+                        "id": rep_id,
+                        "matter_id": matter_id,
+                        "docket_number": docket_num,
+                        "executive_summary": out.executive_summary,
+                        "agreed_clauses_count": len(settled_clauses),
+                        "contested_clauses_count": 0,
+                        "counsel_cost_saved": out.counsel_time_cost_estimate.counsel_cost_saved,
+                        "turnaround_time_minutes": out.counsel_time_cost_estimate.cycle_time_minutes,
+                        "review_status": "pending_review",
+                        "attestation_hash": None,
+                        "block_digest": None,
+                        "created_at": datetime.utcnow().isoformat(),
+                        "updated_at": datetime.utcnow().isoformat(),
+                    }
+                    aud_doc = {
+                        "id": audit_id,
+                        "matter_id": matter_id,
+                        "report_id": rep_id,
+                        "timestamp": audit_ts.isoformat(),
+                        "actor": "Scrivener-4",
+                        "action": "executive_synthesis_and_audit_payload",
+                        "details": audit_rec.details,
+                        "sha256_hash": out.pre_attestation_hash,
+                        "previous_hash": prev_audit_hash,
+                    }
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(rep_coll.replace_one({"id": rep_id}, rep_doc, upsert=True))
+                        loop.create_task(aud_coll.replace_one({"id": audit_id}, aud_doc, upsert=True))
+                    except RuntimeError:
+                        asyncio.run(rep_coll.replace_one({"id": rep_id}, rep_doc, upsert=True))
+                        asyncio.run(aud_coll.replace_one({"id": audit_id}, aud_doc, upsert=True))
+                except Exception:
+                    pass
+
                 return out
             finally:
                 s.close()

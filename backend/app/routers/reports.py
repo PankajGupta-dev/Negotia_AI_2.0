@@ -347,6 +347,44 @@ def review_report(
     if matter:
         db.refresh(matter)
 
+    # Sync to MongoDB Atlas collection 'reviews', 'reports', 'matters'
+    try:
+        from app.db.database import (
+            COLLECTION_MATTERS,
+            COLLECTION_REPORTS,
+            COLLECTION_REVIEWS,
+            sync_mongo_doc,
+        )
+        review_doc = {
+            "id": review_record.id,
+            "report_id": report.id,
+            "matter_id": report.matter_id,
+            "action": action_raw,
+            "counsel_name": counsel_name,
+            "comments": payload.comments,
+            "reviewed_at": review_record.reviewed_at.isoformat() if review_record.reviewed_at else datetime.utcnow().isoformat(),
+        }
+        sync_mongo_doc(COLLECTION_REVIEWS, {"id": review_record.id}, review_doc)
+
+        report_doc = {
+            "id": report.id,
+            "matter_id": report.matter_id,
+            "review_status": report.review_status,
+            "updated_at": report.updated_at.isoformat() if report.updated_at else datetime.utcnow().isoformat(),
+        }
+        sync_mongo_doc(COLLECTION_REPORTS, {"id": report.id}, report_doc)
+
+        if matter:
+            matter_doc = {
+                "id": matter.id,
+                "status": matter.status,
+                "lead_counsel": matter.lead_counsel,
+                "updated_at": matter.updated_at.isoformat() if matter.updated_at else datetime.utcnow().isoformat(),
+            }
+            sync_mongo_doc(COLLECTION_MATTERS, {"id": matter.id}, matter_doc)
+    except Exception:
+        pass
+
     # 8. Notify event broker for live SSE subscribers
     try:
         event_manager.publish(

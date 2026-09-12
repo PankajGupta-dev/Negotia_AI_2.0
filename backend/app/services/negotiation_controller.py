@@ -153,6 +153,37 @@ class NegotiationController:
 
         db.commit()
         db.refresh(row)
+
+        # Sync checkpoint to MongoDB Atlas collection 'checkpoints'
+        try:
+            from app.db.database import get_collection, COLLECTION_CHECKPOINTS
+            coll = get_collection(COLLECTION_CHECKPOINTS)
+            import asyncio
+            chk_doc = {
+                "id": chk_id,
+                "matter_id": self.matter_id,
+                "round_number": checkpoint.round_number,
+                "buyer_offer": checkpoint.buyer_offer or {},
+                "seller_offer": checkpoint.seller_offer or {},
+                "agreed_clauses": checkpoint.agreed_clauses or [],
+                "unresolved_clauses": checkpoint.unresolved_clauses or [],
+                "concessions_made": checkpoint.concessions_made or [],
+                "buyer_non_negotiables": checkpoint.buyer_non_negotiables or [],
+                "seller_non_negotiables": checkpoint.seller_non_negotiables or [],
+                "status": checkpoint.status,
+                "termination_reason": checkpoint.termination_reason,
+                "elapsed_seconds": checkpoint.elapsed_seconds,
+                "token_usage_estimate": checkpoint.token_usage_estimate,
+                "created_at": datetime.utcnow().isoformat(),
+            }
+            try:
+                loop = asyncio.get_running_loop()
+                loop.create_task(coll.replace_one({"id": chk_id}, chk_doc, upsert=True))
+            except RuntimeError:
+                asyncio.run(coll.replace_one({"id": chk_id}, chk_doc, upsert=True))
+        except Exception:
+            pass
+
         logger.info(
             f"[CHECKPOINT] Saved Round {checkpoint.round_number} for matter {self.matter_id} | "
             f"Status: {checkpoint.status} | Agreed: {len(checkpoint.agreed_clauses)} | "

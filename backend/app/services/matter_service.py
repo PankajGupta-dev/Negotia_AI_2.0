@@ -19,12 +19,13 @@ def create_matter(
     variance_ceiling: Optional[float] = None,
     lead_counsel: str = "Unassigned",
 ) -> MatterDB:
-    """Create and persist a new negotiation matter."""
+    """Create and persist a new negotiation matter across SQL & MongoDB Atlas."""
     if not matter_id:
         matter_id = f"2025-INT-{uuid.uuid4().hex[:4].upper()}"
     if not docket_number:
         docket_number = f"DOCKET #{matter_id}"
 
+    now = datetime.utcnow()
     matter = MatterDB(
         id=matter_id,
         docket_number=docket_number,
@@ -35,12 +36,45 @@ def create_matter(
         arr_value=arr_value,
         variance_ceiling=variance_ceiling,
         lead_counsel=lead_counsel,
-        created_at=datetime.utcnow(),
-        updated_at=datetime.utcnow(),
+        created_at=now,
+        updated_at=now,
     )
     db.add(matter)
     db.commit()
     db.refresh(matter)
+
+    # Sync to MongoDB Atlas collection 'matters'
+    try:
+        from app.db.database import get_collection, COLLECTION_MATTERS
+        coll = get_collection(COLLECTION_MATTERS)
+        import asyncio
+        doc = {
+            "id": matter_id,
+            "docket_number": docket_number,
+            "title": title,
+            "counterparty": counterparty,
+            "type": type,
+            "stage": stage,
+            "round": 1,
+            "total_rounds": 4,
+            "status": "active",
+            "risk_level": "moderate",
+            "risk_score": 5.0,
+            "precedent_match": 90.0,
+            "arr_value": arr_value,
+            "variance_ceiling": variance_ceiling,
+            "lead_counsel": lead_counsel,
+            "created_at": now.isoformat(),
+            "updated_at": now.isoformat(),
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coll.replace_one({"id": matter_id}, doc, upsert=True))
+        except RuntimeError:
+            asyncio.run(coll.replace_one({"id": matter_id}, doc, upsert=True))
+    except Exception:
+        pass
+
     return matter
 
 
@@ -61,7 +95,7 @@ def update_matter_status(
     stage: Optional[str] = None,
     risk_score: Optional[float] = None,
 ) -> Optional[MatterDB]:
-    """Update status, stage, or risk score of an existing matter."""
+    """Update status, stage, or risk score of an existing matter across SQL & MongoDB Atlas."""
     matter = get_matter(db, matter_id)
     if not matter:
         return None
@@ -72,10 +106,30 @@ def update_matter_status(
         matter.stage = stage
     if risk_score is not None:
         matter.risk_score = risk_score
-    matter.updated_at = datetime.utcnow()
+    now = datetime.utcnow()
+    matter.updated_at = now
 
     db.commit()
     db.refresh(matter)
+
+    # Sync to MongoDB Atlas
+    try:
+        from app.db.database import get_collection, COLLECTION_MATTERS
+        coll = get_collection(COLLECTION_MATTERS)
+        import asyncio
+        update_fields: dict = {"status": status_str, "updated_at": now.isoformat()}
+        if stage is not None:
+            update_fields["stage"] = stage
+        if risk_score is not None:
+            update_fields["risk_score"] = risk_score
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coll.update_one({"id": matter_id}, {"$set": update_fields}))
+        except RuntimeError:
+            asyncio.run(coll.update_one({"id": matter_id}, {"$set": update_fields}))
+    except Exception:
+        pass
+
     return matter
 
 
@@ -88,11 +142,12 @@ def store_document_metadata(
     file_type: Optional[str] = None,
     document_id: Optional[str] = None,
 ) -> ContractDocumentDB:
-    """Store uploaded contract document metadata for Party A or Party B."""
+    """Store uploaded contract document metadata across SQL & MongoDB Atlas."""
     if not document_id:
         document_id = f"doc_{uuid.uuid4().hex[:8]}"
 
     party_str = party.value if isinstance(party, DocumentParty) else party
+    now = datetime.utcnow()
 
     doc = ContractDocumentDB(
         id=document_id,
@@ -101,11 +156,34 @@ def store_document_metadata(
         filename=filename,
         file_path=file_path,
         file_type=file_type,
-        uploaded_at=datetime.utcnow(),
+        uploaded_at=now,
     )
     db.add(doc)
     db.commit()
     db.refresh(doc)
+
+    # Sync to MongoDB Atlas collection 'documents'
+    try:
+        from app.db.database import get_collection, COLLECTION_DOCUMENTS
+        coll = get_collection(COLLECTION_DOCUMENTS)
+        import asyncio
+        doc_record = {
+            "id": document_id,
+            "matter_id": matter_id,
+            "party": party_str,
+            "filename": filename,
+            "file_path": file_path,
+            "file_type": file_type,
+            "uploaded_at": now.isoformat(),
+        }
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(coll.replace_one({"id": document_id}, doc_record, upsert=True))
+        except RuntimeError:
+            asyncio.run(coll.replace_one({"id": document_id}, doc_record, upsert=True))
+    except Exception:
+        pass
+
     return doc
 
 
