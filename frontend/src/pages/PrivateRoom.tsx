@@ -398,8 +398,15 @@ export const PrivateRoom: React.FC = () => {
     setRejectionNotice(null);
 
     try {
-      const creatorName = user?.name || (role === 'buyer' ? 'Elena Rostova (Buyer)' : 'Marcus Vance (Seller)');
-      const creatorRole = role === 'seller' ? 'seller' : 'buyer';
+      const isSeller = role === 'seller';
+      const cleanUserName = (user?.name || '').replace(/\s*\((buyer|seller)\)/gi, '').trim();
+      const isDemo = !cleanUserName || cleanUserName.toLowerCase().includes('negotiation demo') || cleanUserName === 'Guest User';
+      const creatorName = !isDemo
+        ? `${cleanUserName} (${isSeller ? 'Seller' : 'Buyer'})`
+        : isSeller
+        ? 'Marcus Vance (Seller)'
+        : 'Elena Rostova (Buyer)';
+      const creatorRole = isSeller ? 'seller' : 'buyer';
 
       const res = await createPrivateRoom({
         title: roomTitle,
@@ -520,9 +527,11 @@ export const PrivateRoom: React.FC = () => {
     setIsSubmittingJoin(true);
     try {
       const guestRole: 'seller' | 'buyer' = 'seller';
-      const rawUserName = user?.name || 'Negotiation Demo';
-      const cleanBaseName = rawUserName.replace(/\s*\(buyer\)/i, '').replace(/\s*\(seller\)/i, '').trim();
-      const guestName = `${cleanBaseName} (Seller)`;
+      const cleanBaseName = (user?.name || '').replace(/\s*\((buyer|seller)\)/gi, '').trim();
+      const isDemo = !cleanBaseName || cleanBaseName.toLowerCase().includes('negotiation demo') || cleanBaseName === 'Guest User';
+      const guestName = !isDemo
+        ? `${cleanBaseName} (Seller)`
+        : 'Marcus Vance (Seller)';
 
       const res = await requestJoinPrivateRoom(cleanId, {
         guest_name: guestName,

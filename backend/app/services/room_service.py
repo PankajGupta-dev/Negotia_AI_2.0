@@ -99,7 +99,11 @@ def create_room(
     """
     room_id = generate_collision_safe_room_id(db, prefix="NEG")
     clean_passcode = passcode.strip() if passcode and passcode.strip() else ""
-    clean_creator_name = creator_name.strip() if creator_name and creator_name.strip() else f"Counsel ({creator_role.capitalize()})"
+    raw_cname = (creator_name or "").strip()
+    if not raw_cname or "negotiation demo" in raw_cname.lower() or raw_cname.startswith("Counsel"):
+        clean_creator_name = "Elena Rostova (Buyer)" if (creator_role or "buyer").lower() == "buyer" else "Marcus Vance (Seller)"
+    else:
+        clean_creator_name = raw_cname
     creator_token = f"ctok_{secrets.token_hex(12)}"
     now = datetime.utcnow()
 
@@ -167,6 +171,33 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
                 if doc.get("active_participants_count") is not None and doc.get("active_participants_count") != room.active_participants_count:
                     room.active_participants_count = doc.get("active_participants_count")
                     updated = True
+
+                # Merge messages from cloud MongoDB Atlas so cross-laptop chats sync instantly
+                mongo_msgs = doc.get("messages") or []
+                if mongo_msgs:
+                    current_msgs = list(room.messages or [])
+                    msg_map = {}
+                    for m in current_msgs:
+                        k = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}_{m.get('sender_id')}"
+                        msg_map[k] = m
+                    added = False
+                    for m in mongo_msgs:
+                        k = m.get("id") or f"{m.get('timestamp')}_{m.get('text')}_{m.get('sender_id')}"
+                        if k not in msg_map:
+                            msg_map[k] = m
+                            added = True
+                    if added:
+                        room.messages = sorted(list(msg_map.values()), key=lambda x: x.get("timestamp") or "")
+                        flag_modified(room, "messages")
+                        updated = True
+
+                if doc.get("shared_state"):
+                    cur_state = dict(room.shared_state or {})
+                    cur_state.update(doc.get("shared_state") or {})
+                    room.shared_state = cur_state
+                    flag_modified(room, "shared_state")
+                    updated = True
+
                 if updated:
                     db.commit()
                     db.refresh(room)
@@ -270,12 +301,10 @@ def request_join(
     clean_role = forced_guest_role
 
     raw_name = (participant_name or "").strip()
-    if not raw_name:
-        clean_name = f"Counterparty Counsel ({clean_role.capitalize()})"
+    if not raw_name or "negotiation demo" in raw_name.lower() or raw_name.startswith("Counterparty"):
+        clean_name = "Marcus Vance (Seller)" if clean_role == "seller" else "Elena Rostova (Buyer)"
     else:
-        clean_name = raw_name.replace("(buyer)", f"({clean_role})").replace("(Buyer)", f"({clean_role.capitalize()})")
-        if f"({clean_role})" not in clean_name.lower():
-            clean_name = f"{clean_name} ({clean_role})"
+        clean_name = raw_name
 
     room.participant_id = participant_id
     room.guest_id = participant_id
@@ -325,10 +354,14 @@ def admit_participant(
 
     # Record admission event in messages
     history = list(room.messages or [])
+    admit_guest_name = room.guest_name or room.participant_id
+    if not admit_guest_name or "negotiation demo" in str(admit_guest_name).lower() or "guest_" in str(admit_guest_name).lower():
+        admit_guest_name = "Marcus Vance (Seller)" if (room.guest_role or "seller").lower() == "seller" else "Elena Rostova (Buyer)"
+
     history.append({
         "type": "system",
         "action": "admit",
-        "text": f"Participant {room.guest_name or room.participant_id} was admitted by creator.",
+        "text": f"Participant {admit_guest_name} was admitted by creator.",
         "timestamp": datetime.utcnow().isoformat(),
     })
     room.messages = history
@@ -414,8 +447,12 @@ def leave_room(
         raise ValueError("Specified participant does not belong to this room.")
 
     # Record leave event without deleting room or historical data
-    leaving_role = room.creator_role if is_creator else (room.guest_role or "guest")
-    leaving_name = room.creator_name if is_creator else (room.guest_name or participant_id)
+    leaving_role = (room.creator_role if is_creator else (room.guest_role or "seller")).lower()
+    raw_lname = room.creator_name if is_creator else (room.guest_name or participant_id)
+    if not raw_lname or "negotiation demo" in str(raw_lname).lower() or "guest_" in str(raw_lname).lower():
+        leaving_name = "Marcus Vance (Seller)" if leaving_role == "seller" else "Elena Rostova (Buyer)"
+    else:
+        leaving_name = raw_lname
 
     if is_guest:
         room.guest_status = "left"

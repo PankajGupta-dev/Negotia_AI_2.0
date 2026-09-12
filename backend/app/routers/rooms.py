@@ -275,7 +275,11 @@ def create_room_endpoint(
     Creator is automatically assigned.
     """
     cid = payload.creator_id or f"counsel_{secrets.token_hex(4)}"
-    cname = payload.creator_name or f"Counsel ({payload.creator_role.capitalize()})"
+    raw_cname = (payload.creator_name or "").strip()
+    if not raw_cname or "negotiation demo" in raw_cname.lower() or raw_cname.startswith("Counsel"):
+        cname = "Elena Rostova (Buyer)" if (payload.creator_role or "buyer").lower() == "buyer" else "Marcus Vance (Seller)"
+    else:
+        cname = raw_cname
 
     room = svc_create_room(
         db=db,
@@ -358,13 +362,16 @@ async def post_room_message_endpoint(
             detail="Message text cannot be empty."
         )
 
-    sender_id = payload.get("sender_id") or "participant"
-    sender_name = payload.get("sender_name") or "Counsel"
-    sender_role = payload.get("sender_role") or "seller"
+    sender_role = (payload.get("sender_role") or "seller").lower()
+    raw_sname = (payload.get("sender_name") or "").strip()
+    if not raw_sname or "negotiation demo" in raw_sname.lower() or raw_sname == "Counsel":
+        sender_name = "Elena Rostova (Buyer)" if sender_role == "buyer" else "Marcus Vance (Seller)"
+    else:
+        sender_name = raw_sname
     timestamp = datetime.utcnow().isoformat() + "Z"
 
     msg_event = {
-        "id": f"msg_{secrets.token_hex(6)}",
+        "id": payload.get("id") or f"msg_{secrets.token_hex(6)}",
         "type": "message",
         "sender_id": sender_id,
         "sender_name": sender_name,
@@ -401,8 +408,12 @@ async def join_room_endpoint(
     """
     clean_room_id = (room_id or "").strip().upper()
     pid = payload.participant_id or payload.guest_id or f"guest_{secrets.token_hex(4)}"
-    pname = payload.participant_name or payload.guest_name or "Counterparty Counsel"
-    prole = payload.participant_role or payload.guest_role or "seller"
+    prole = (payload.participant_role or payload.guest_role or "seller").lower()
+    raw_pname = (payload.participant_name or payload.guest_name or "").strip()
+    if not raw_pname or "negotiation demo" in raw_pname.lower() or raw_pname.startswith("Counterparty"):
+        pname = "Marcus Vance (Seller)" if prole == "seller" else "Elena Rostova (Buyer)"
+    else:
+        pname = raw_pname
 
     room = svc_get_room(db, clean_room_id)
     if not room:

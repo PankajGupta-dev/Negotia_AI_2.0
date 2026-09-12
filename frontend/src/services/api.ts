@@ -791,7 +791,7 @@ export interface RoomPublicDetail {
 
 export async function sendRoomMessage(
   roomId: string,
-  payload: { text: string; sender_id?: string; sender_name?: string; sender_role?: string; token?: string }
+  payload: { id?: string; text: string; sender_id?: string; sender_name?: string; sender_role?: string; token?: string }
 ): Promise<any> {
   const cleanId = (roomId || '').trim().toUpperCase();
   return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/messages`, {

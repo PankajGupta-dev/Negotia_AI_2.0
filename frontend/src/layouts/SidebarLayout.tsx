@@ -87,13 +87,33 @@ export const SidebarLayout: React.FC = () => {
   const isGovernance = location.pathname.startsWith('/governance') || location.pathname.startsWith('/team');
   const isPrivateRoom = location.pathname.startsWith('/private-room');
 
-  // Current user display data
-  const displayName = user?.name ?? 'Guest User';
-  const displayInitials = user?.initials ?? 'GU';
-  const displayTitle = user?.title ?? 'Legal Counsel';
-  const displayEmail = user?.email ?? '';
-  const displayCompany = user?.company ?? 'Enterprise';
-  const activeRole = user?.role ?? role;
+  // Resolve Buyer or Seller demo profiles (no unified negotiation demo)
+  const isDemoUser = !user?.name || user.name.toLowerCase().includes('negotiation demo') || user?.role === 'unified_demo';
+  const effectiveRole = isDemoUser
+    ? (sessionStorage.getItem('negotia_active_role') === 'seller' || role === 'seller' ? 'seller' : 'buyer')
+    : (user?.role ?? role);
+
+  const displayName = isDemoUser
+    ? (effectiveRole === 'seller' ? 'Marcus Vance (Seller)' : 'Elena Rostova (Buyer)')
+    : (user?.name ?? 'Guest User');
+
+  const displayInitials = isDemoUser
+    ? (effectiveRole === 'seller' ? 'MV' : 'ER')
+    : (user?.initials ?? 'GU');
+
+  const displayTitle = isDemoUser
+    ? (effectiveRole === 'seller' ? 'VP Commercial Legal' : 'General Counsel')
+    : (user?.title ?? 'Legal Counsel');
+
+  const displayEmail = isDemoUser
+    ? (effectiveRole === 'seller' ? 'marcus.vance@apexdynamics.io' : 'elena.rostova@velocesystems.com')
+    : (user?.email ?? '');
+
+  const displayCompany = isDemoUser
+    ? (effectiveRole === 'seller' ? 'Apex Dynamics Corp.' : 'Veloce Systems Inc.')
+    : (user?.company ?? 'Enterprise');
+
+  const activeRole = effectiveRole;
 
   return (
     <div className="min-h-screen bg-background text-on-surface flex">
