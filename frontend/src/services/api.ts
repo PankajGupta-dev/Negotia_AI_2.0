@@ -895,6 +895,52 @@ export function getNegotiationWebSocketUrl(
   return `${protocol}//${window.location.host}/ws/negotiation/${encodeURIComponent(roomId)}${q}`;
 }
 
+// ═════════════════════════════════════════════════════════════════════════════
+// Sandbox Simulation
+// ═════════════════════════════════════════════════════════════════════════════
+
+export interface SandboxSimulateParams {
+  liability_cap: number;
+  payment_terms: number;
+  audit_days: number;
+  ip_carveout: 'strict' | 'standard' | 'flexible';
+  posture: 'aggressive' | 'balanced' | 'defensive';
+  matter_title?: string;
+}
+
+export interface TurnTrajectoryEntry {
+  round: number;
+  label: string;
+  alignment_pct: number;
+  status: 'baseline' | 'breach' | 'nash';
+}
+
+export interface SandboxSimulateResult {
+  fairness_index: number;
+  leverage_score: number;
+  counterparty_acceptance_pct: number;
+  is_pareto_optimal: boolean;
+  equilibrium_label: string;
+  trajectory: TurnTrajectoryEntry[];
+  recommendation: string;
+  aggregate_compromise_score: number;
+  clause_scores: Record<string, {
+    title: string;
+    strategy: string | null;
+    compromise_score: number;
+    party_a_utility: number;
+    party_b_utility: number;
+    is_pareto_efficient: boolean;
+  }>;
+}
+
+export async function runSandboxSimulation(params: SandboxSimulateParams): Promise<SandboxSimulateResult> {
+  return request<SandboxSimulateResult>('/api/sandbox/simulate', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  });
+}
+
 // Default export consolidating all endpoints
 const api = {
   ingestContracts,
@@ -919,6 +965,7 @@ const api = {
   closePrivateRoom,
   getRoomMessages,
   getRoomWebSocketUrl,
+  runSandboxSimulation,
 };
 
 export default api;
