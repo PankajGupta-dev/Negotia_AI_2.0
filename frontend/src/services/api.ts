@@ -787,6 +787,162 @@ export interface RoomPublicDetail {
   messages?: any[];
   created_at: string;
   closed_at?: string;
+  has_party_a_submitted?: boolean;
+  has_party_b_submitted?: boolean;
+  ready_for_pipeline?: boolean;
+  is_ready?: boolean;
+  readiness?: 'READY' | 'WAITING' | string;
+  pipeline_status?: string;
+  report_id?: string;
+  submissions?: {
+    has_party_a: boolean;
+    has_party_b: boolean;
+    ready_for_pipeline: boolean;
+    is_ready?: boolean;
+    readiness?: string;
+    pipeline_status?: string;
+  };
+}
+
+export interface RoomPrivateInput {
+  room_id: string;
+  party: 'party_a' | 'party_b';
+  has_submitted: boolean;
+  filename?: string;
+  clauses_count?: number;
+  char_count?: number;
+  submitted_at?: string;
+  clauses?: any[];
+  text?: string;
+  message?: string;
+}
+
+export interface RoomSharedState {
+  room_id: string;
+  status: string;
+  readiness: 'READY' | 'WAITING_FOR_INPUTS' | string;
+  ready_for_pipeline: boolean;
+  has_party_a_submitted: boolean;
+  has_party_b_submitted: boolean;
+  mutually_visible_clauses: any[];
+  proposals: any[];
+  agreed_changes: any[];
+  ai_results: {
+    report_id?: string;
+    review_status?: string;
+    clauses_count?: number;
+    executive_summary?: string;
+    compromise_proposals?: any[];
+    risk_summary?: any;
+    equilibrium_score?: number;
+  };
+}
+
+export async function submitRoomContractInput(
+  roomId: string,
+  payload: {
+    party?: 'party_a' | 'party_b' | string;
+    text?: string;
+    clauses?: any[];
+    filename?: string;
+    auto_start?: boolean;
+    participant_id?: string;
+    token?: string;
+  },
+  token?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  const effectiveToken = token || payload.token;
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/submit`, {
+    method: 'POST',
+    headers: effectiveToken ? { 'X-Participant-Token': effectiveToken, 'X-Creator-Token': effectiveToken } : {},
+    body: JSON.stringify({
+      ...payload,
+      token: effectiveToken,
+    }),
+  });
+}
+
+export async function uploadRoomContractFile(
+  roomId: string,
+  file: File,
+  party?: 'party_a' | 'party_b' | string,
+  autoStart: boolean = false,
+  token?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  const formData = new FormData();
+  formData.append('file', file);
+  if (party) formData.append('party', party);
+  if (autoStart) formData.append('auto_start', 'true');
+  if (token) formData.append('token', token);
+
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/upload`, {
+    method: 'POST',
+    headers: token ? { 'X-Participant-Token': token, 'X-Creator-Token': token } : {},
+    body: formData,
+  });
+}
+
+export async function getRoomPrivateInput(
+  roomId: string,
+  party: 'party_a' | 'party_b' | string,
+  token?: string
+): Promise<RoomPrivateInput> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  const headers: Record<string, string> = {};
+  if (token) {
+    headers['X-Participant-Token'] = token;
+    headers['X-Creator-Token'] = token;
+  }
+  const q = token ? `?token=${encodeURIComponent(token)}` : '';
+  return request<RoomPrivateInput>(`/api/rooms/${encodeURIComponent(cleanId)}/inputs/${encodeURIComponent(party)}${q}`, {
+    headers,
+  });
+}
+
+export async function getRoomSharedState(roomId: string): Promise<RoomSharedState> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<RoomSharedState>(`/api/rooms/${encodeURIComponent(cleanId)}/shared`);
+}
+
+export async function startRoomPipeline(roomId: string): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/pipeline/start`, {
+    method: 'POST',
+  });
+}
+
+export async function getRoomPipelineStatus(roomId: string): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/pipeline`);
+}
+
+export async function agreeRoomClause(
+  roomId: string,
+  clauseId: string,
+  agreedText?: string,
+  token?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/clauses/${encodeURIComponent(clauseId)}/agree`, {
+    method: 'POST',
+    headers: token ? { 'X-Participant-Token': token, 'X-Creator-Token': token } : {},
+    body: JSON.stringify({ agreed_text: agreedText }),
+  });
+}
+
+export async function submitRoomProposal(
+  roomId: string,
+  proposal: { clause_id?: string; title?: string; proposal: string },
+  token?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/proposals`, {
+    method: 'POST',
+    headers: token ? { 'X-Participant-Token': token, 'X-Creator-Token': token } : {},
+    body: JSON.stringify(proposal),
+  });
 }
 
 export async function sendRoomMessage(
@@ -798,6 +954,31 @@ export async function sendRoomMessage(
     method: 'POST',
     headers: payload.token ? { 'X-Room-Token': payload.token } : {},
     body: JSON.stringify(payload),
+  });
+}
+
+export async function reviewRoomReport(
+  roomId: string,
+  action: 'approve' | 'request_revision' | 'escalate',
+  counselName?: string,
+  comments?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/review`, {
+    method: 'POST',
+    body: JSON.stringify({ action, counsel_name: counselName || 'General Counsel', comments }),
+  });
+}
+
+export async function sealRoomReport(
+  roomId: string,
+  counselName?: string,
+  comments?: string
+): Promise<any> {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/seal`, {
+    method: 'POST',
+    body: JSON.stringify({ counsel_name: counselName || 'General Counsel', comments }),
   });
 }
 

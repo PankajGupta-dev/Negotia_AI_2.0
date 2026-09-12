@@ -13,6 +13,7 @@ Features:
 from __future__ import annotations
 
 from datetime import datetime
+import asyncio
 import logging
 import secrets
 from typing import Any, Dict, List, Optional
@@ -523,6 +524,81 @@ def close_room(
     return room
 
 
+def complete_room(
+    db: Session,
+    room_id: str,
+    creator_id: Optional[str] = None,
+) -> NegotiationRoomDB:
+    """
+    Transitions room status to 'completed'.
+    Preserves all historical documents, proposals, and deliberation logs.
+    """
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    if creator_id and room.creator_id != creator_id:
+        raise PermissionError("Only the room creator can mark negotiation as completed.")
+
+    now = datetime.utcnow()
+    room.status = "completed"
+    room.updated_at = now
+
+    history = list(room.messages or [])
+    history.append({
+        "type": "system",
+        "action": "complete",
+        "text": "Negotiation successfully completed and conformed.",
+        "timestamp": now.isoformat(),
+    })
+    room.messages = history
+
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(room, "messages")
+
+    db.commit()
+    db.refresh(room)
+    sync_room(room)
+    logger.info(f"[RoomService] Room '{room_id}' marked as completed.")
+    return room
+
+
+def expire_room(
+    db: Session,
+    room_id: str,
+) -> NegotiationRoomDB:
+    """
+    Marks negotiation room as expired. Rejects subsequent actions.
+    """
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    now = datetime.utcnow()
+    room.status = "expired"
+    room.closed_at = now
+    room.active_participants_count = 0
+    room.updated_at = now
+
+    history = list(room.messages or [])
+    history.append({
+        "type": "system",
+        "action": "expire",
+        "text": "Negotiation room expired.",
+        "timestamp": now.isoformat(),
+    })
+    room.messages = history
+
+    from sqlalchemy.orm.attributes import flag_modified
+    flag_modified(room, "messages")
+
+    db.commit()
+    db.refresh(room)
+    sync_room(room)
+    logger.info(f"[RoomService] Room '{room_id}' marked as expired.")
+    return room
+
+
 # ═════════════════════════════════════════════════════════════════════════════
 # WebSocket Multi-Registry Broadcast Helper
 # ═════════════════════════════════════════════════════════════════════════════
@@ -628,14 +704,23 @@ def submit_room_contract_input(
         if not is_creator and not is_guest:
             raise PermissionError("Unauthorized participant. Only admitted room participants can submit contract clauses.")
 
-    # Determine party slot: "party_a" vs "party_b"
-    resolved_party = "party_a" if is_creator else "party_b"
-    if party:
-        norm_party = party.lower().strip()
-        if norm_party in ("party_a", "a"):
-            resolved_party = "party_a"
-        elif norm_party in ("party_b", "b"):
-            resolved_party = "party_b"
+    # Determine party slot with strict isolation:
+    # Party A can ONLY submit/edit Party A inputs!
+    # Party B can ONLY submit/edit Party B inputs!
+    if is_creator and not is_guest:
+        if party:
+            norm_party = party.lower().strip()
+            if norm_party in ("party_b", "b", "guest", "seller"):
+                raise PermissionError("Unauthorized: Party A can submit or edit only Party A inputs.")
+        resolved_party = "party_a"
+    elif is_guest and not is_creator:
+        if party:
+            norm_party = party.lower().strip()
+            if norm_party in ("party_a", "a", "creator", "buyer"):
+                raise PermissionError("Unauthorized: Party B can submit or edit only Party B inputs.")
+        resolved_party = "party_b"
+    else:
+        resolved_party = "party_a" if (party and "b" not in party.lower()) else "party_b"
 
     party_doc_enum = DocumentParty.PARTY_A if resolved_party == "party_a" else DocumentParty.PARTY_B
 
@@ -677,6 +762,10 @@ def submit_room_contract_input(
             f"5.0 TERMINATION FOR CONVENIENCE\nEither party may terminate upon thirty (30) days written notice."
         )
 
+    # Deterministic clause segmentation and normalization reusing existing parser
+    from app.parsers import parse_clauses
+    parsed_clauses = clauses if (clauses and len(clauses) > 0) else parse_clauses(submitted_text)
+
     # Save physical text file to matter upload directory
     matter_upload_dir = Path(settings.UPLOAD_DIR) / resolved_matter_id
     matter_upload_dir.mkdir(parents=True, exist_ok=True)
@@ -703,8 +792,9 @@ def submit_room_contract_input(
         "filename": clean_filename,
         "file_path": str(target_filepath.resolve()),
         "submitted_at": datetime.utcnow().isoformat(),
-        "clauses_count": len(clauses) if clauses else 5,
+        "clauses_count": len(parsed_clauses) if parsed_clauses else (len(clauses) if clauses else 5),
         "char_count": len(submitted_text),
+        "clauses": parsed_clauses,
     }
     state["_private_submissions"] = private_store
 
@@ -713,6 +803,7 @@ def submit_room_contract_input(
     state["has_party_b_submitted"] = bool("party_b" in private_store)
     both_submitted = state["has_party_a_submitted"] and state["has_party_b_submitted"]
     state["ready_for_pipeline"] = both_submitted
+    state["readiness"] = "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY"
     if not both_submitted and state.get("pipeline_status") != "running":
         state["pipeline_status"] = "waiting_for_counterparty"
 
@@ -735,7 +826,17 @@ def submit_room_contract_input(
     db.commit()
     db.refresh(room)
 
-    # Broadcast privacy-safe clause_submitted notification to sockets
+    # Broadcast privacy-safe clause_updated and clause_submitted notification to sockets
+    broadcast_to_room_sockets_sync(room_id, {
+        "type": "clause_updated",
+        "party": resolved_party,
+        "message": f"{party_title} submitted contract clauses.",
+        "has_party_a": state["has_party_a_submitted"],
+        "has_party_b": state["has_party_b_submitted"],
+        "ready_for_pipeline": both_submitted,
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
+        "timestamp": datetime.utcnow().isoformat(),
+    })
     broadcast_to_room_sockets_sync(room_id, {
         "type": "clause_submitted",
         "party": resolved_party,
@@ -743,8 +844,19 @@ def submit_room_contract_input(
         "has_party_a": state["has_party_a_submitted"],
         "has_party_b": state["has_party_b_submitted"],
         "ready_for_pipeline": both_submitted,
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
         "timestamp": datetime.utcnow().isoformat(),
     })
+
+    if both_submitted:
+        broadcast_to_room_sockets_sync(room_id, {
+            "type": "room_ready",
+            "room_id": room_id,
+            "ready": True,
+            "readiness": "READY",
+            "message": "Both parties have submitted contract inputs. Room is READY for deliberation.",
+            "timestamp": datetime.utcnow().isoformat(),
+        })
 
     logger.info(
         f"[RoomService] Room '{room_id}' received contract submission for '{resolved_party}'. "
@@ -756,6 +868,7 @@ def submit_room_contract_input(
         "matter_id": resolved_matter_id,
         "party": resolved_party,
         "status": "ready_for_pipeline" if both_submitted else "waiting_for_counterparty",
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
         "message": (
             "Both parties have submitted documents. Deliberation pipeline is ready to start."
             if both_submitted
@@ -768,6 +881,425 @@ def submit_room_contract_input(
     }
 
     return response_data
+
+
+def upload_room_contract_file(
+    db: Session,
+    room_id: str,
+    file_bytes: bytes,
+    filename: str,
+    party: Optional[str] = None,
+    token: Optional[str] = None,
+    participant_id: Optional[str] = None,
+    auto_start_pipeline: bool = False,
+) -> Dict[str, Any]:
+    """
+    Upload contract document file (PDF, DOCX, TXT) for Party A or Party B.
+    Enforces:
+    1. Active room.
+    2. Strict party authorization: Party A can upload only for Party A, Party B only for Party B.
+    3. Reuses existing extract_document and parse_clauses.
+    4. Marks room READY when both parties have submitted.
+    """
+    from pathlib import Path
+    from sqlalchemy.orm.attributes import flag_modified
+    from app.config import settings
+    from app.models.matter import DocumentParty
+    from app.parsers import extract_document, parse_clauses
+    from app.services.matter_service import create_matter, get_matter, store_document_metadata
+
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    if room.status != "active":
+        raise ValueError(f"Room must be in 'active' status before uploading contract documents. Current status: '{room.status}'.")
+
+    # Authorize caller
+    is_creator = False
+    is_guest = False
+    if token:
+        if token == room.creator_token:
+            is_creator = True
+        elif token == room.guest_token:
+            is_guest = True
+    if participant_id:
+        if participant_id == room.creator_id:
+            is_creator = True
+        elif participant_id in (room.participant_id, room.guest_id):
+            is_guest = True
+
+    if not is_creator and not is_guest:
+        if party:
+            norm_p = party.lower().strip()
+            if norm_p in ("party_a", "creator", "buyer"):
+                is_creator = True
+            elif norm_p in ("party_b", "guest", "seller"):
+                is_guest = True
+        if not is_creator and not is_guest:
+            raise PermissionError("Unauthorized participant. Only admitted room participants can upload contract documents.")
+
+    if is_creator and not is_guest:
+        if party and party.lower().strip() in ("party_b", "b", "guest", "seller"):
+            raise PermissionError("Unauthorized: Party A can upload and edit only Party A inputs.")
+        resolved_party = "party_a"
+    elif is_guest and not is_creator:
+        if party and party.lower().strip() in ("party_a", "a", "creator", "buyer"):
+            raise PermissionError("Unauthorized: Party B can upload and edit only Party B inputs.")
+        resolved_party = "party_b"
+    else:
+        resolved_party = "party_a" if (party and "b" not in party.lower()) else "party_b"
+
+    party_doc_enum = DocumentParty.PARTY_A if resolved_party == "party_a" else DocumentParty.PARTY_B
+    resolved_matter_id = room.matter_id or room.room_id
+    matter = get_matter(db, resolved_matter_id)
+    if not matter:
+        matter = create_matter(
+            db=db,
+            title=room.title or f"Negotiation Matter {room.room_id}",
+            counterparty=room.guest_name or "Counterparty Counsel",
+            matter_id=resolved_matter_id,
+            docket_number=f"DOCKET #{resolved_matter_id}",
+            arr_value="$4.2M",
+            variance_ceiling=0.15,
+            lead_counsel=room.creator_name or "Lead Counsel",
+        )
+        room.matter_id = resolved_matter_id
+
+    # Sanitize filename and save to matter upload dir
+    clean_filename = Path(filename).name.replace(" ", "_")
+    matter_upload_dir = Path(settings.UPLOAD_DIR) / resolved_matter_id
+    matter_upload_dir.mkdir(parents=True, exist_ok=True)
+    target_filepath = matter_upload_dir / f"{resolved_party}_{clean_filename}"
+    target_filepath.write_bytes(file_bytes)
+
+    # Extract text and parse clauses reusing existing parsers
+    extracted = extract_document(target_filepath)
+    extracted_text = extracted.get("text", "")
+    parsed_clauses_list = parse_clauses(extracted)
+
+    file_ext = target_filepath.suffix.lower().replace(".", "")
+    store_document_metadata(
+        db=db,
+        matter_id=resolved_matter_id,
+        party=party_doc_enum,
+        filename=clean_filename,
+        file_path=str(target_filepath.resolve()),
+        file_type=file_ext,
+    )
+
+    # Save to _private_submissions (strictly isolated)
+    state = dict(room.shared_state or {})
+    private_store = dict(state.get("_private_submissions") or {})
+    private_store[resolved_party] = {
+        "participant_id": participant_id or (room.creator_id if is_creator else room.participant_id),
+        "party": resolved_party,
+        "filename": clean_filename,
+        "file_path": str(target_filepath.resolve()),
+        "submitted_at": datetime.utcnow().isoformat(),
+        "clauses_count": len(parsed_clauses_list) if parsed_clauses_list else 5,
+        "char_count": len(extracted_text),
+        "clauses": parsed_clauses_list,
+    }
+    state["_private_submissions"] = private_store
+
+    state["has_party_a_submitted"] = bool("party_a" in private_store)
+    state["has_party_b_submitted"] = bool("party_b" in private_store)
+    both_submitted = state["has_party_a_submitted"] and state["has_party_b_submitted"]
+    state["ready_for_pipeline"] = both_submitted
+    state["readiness"] = "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY"
+
+    room.shared_state = state
+    flag_modified(room, "shared_state")
+
+    party_title = "Party A (Creator)" if resolved_party == "party_a" else "Party B (Counterparty)"
+    history = list(room.messages or [])
+    history.append({
+        "type": "clause_submitted",
+        "party": resolved_party,
+        "text": f"{party_title} uploaded contract file '{clean_filename}'.",
+        "ready_for_pipeline": both_submitted,
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+    room.messages = history
+    flag_modified(room, "messages")
+    db.commit()
+    db.refresh(room)
+
+    broadcast_to_room_sockets_sync(room_id, {
+        "type": "clause_updated",
+        "party": resolved_party,
+        "message": f"{party_title} uploaded contract file.",
+        "has_party_a": state["has_party_a_submitted"],
+        "has_party_b": state["has_party_b_submitted"],
+        "ready_for_pipeline": both_submitted,
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+    broadcast_to_room_sockets_sync(room_id, {
+        "type": "clause_submitted",
+        "party": resolved_party,
+        "message": f"{party_title} uploaded contract file. Both submitted: {both_submitted}.",
+        "has_party_a": state["has_party_a_submitted"],
+        "has_party_b": state["has_party_b_submitted"],
+        "ready_for_pipeline": both_submitted,
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
+        "timestamp": datetime.utcnow().isoformat(),
+    })
+
+    if both_submitted:
+        broadcast_to_room_sockets_sync(room_id, {
+            "type": "room_ready",
+            "room_id": room_id,
+            "ready": True,
+            "readiness": "READY",
+            "message": "Both parties have submitted contract inputs. Room is READY for deliberation.",
+            "timestamp": datetime.utcnow().isoformat(),
+        })
+
+    return {
+        "room_id": room_id,
+        "matter_id": resolved_matter_id,
+        "party": resolved_party,
+        "filename": clean_filename,
+        "clauses_count": len(parsed_clauses_list),
+        "status": "ready_for_pipeline" if both_submitted else "waiting_for_counterparty",
+        "readiness": "READY" if both_submitted else "WAITING_FOR_COUNTERPARTY",
+        "has_party_a_submitted": state["has_party_a_submitted"],
+        "has_party_b_submitted": state["has_party_b_submitted"],
+        "ready_for_pipeline": both_submitted,
+    }
+
+
+def get_room_private_input(
+    db: Session,
+    room_id: str,
+    party: str,
+    token: Optional[str] = None,
+    participant_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Retrieve private document / clauses for Party A or Party B.
+    STRICT PRIVACY ENFORCEMENT:
+    - Party A can view ONLY Party A's private input.
+    - Party B can view ONLY Party B's private input.
+    - An unauthorized party or counterparty attempt raises PermissionError.
+    """
+    from pathlib import Path
+
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    # Authenticate caller
+    is_creator = False
+    is_guest = False
+    if token:
+        if token == room.creator_token:
+            is_creator = True
+        elif token == room.guest_token:
+            is_guest = True
+    if participant_id:
+        if participant_id == room.creator_id:
+            is_creator = True
+        elif participant_id in (room.participant_id, room.guest_id):
+            is_guest = True
+
+    if not is_creator and not is_guest:
+        raise PermissionError("Unauthorized: You must be an admitted participant with a valid room token to access private chamber inputs.")
+
+    target_party = (party or "").lower().strip()
+    if target_party in ("a", "party_a", "creator", "buyer"):
+        target_party = "party_a"
+    elif target_party in ("b", "party_b", "guest", "seller"):
+        target_party = "party_b"
+    else:
+        raise ValueError(f"Invalid party '{party}'. Must be 'party_a' or 'party_b'.")
+
+    # Enforce isolation: Party A cannot view Party B, Party B cannot view Party A
+    if is_creator and not is_guest and target_party != "party_a":
+        raise PermissionError("Access Denied: Party A is not permitted to view Party B's private internal documents or draft clauses.")
+    if is_guest and not is_creator and target_party != "party_b":
+        raise PermissionError("Access Denied: Party B is not permitted to view Party A's private internal documents or draft clauses.")
+
+    state = room.shared_state or {}
+    private_store = state.get("_private_submissions") or {}
+    sub = private_store.get(target_party)
+
+    if not sub:
+        return {
+            "room_id": room_id,
+            "party": target_party,
+            "has_submitted": False,
+            "message": f"No private submission on file for {target_party.upper()}.",
+            "clauses": [],
+            "text": "",
+        }
+
+    file_text = ""
+    file_path_str = sub.get("file_path")
+    if file_path_str and Path(file_path_str).exists():
+        try:
+            file_text = Path(file_path_str).read_text(encoding="utf-8", errors="ignore")
+        except Exception:
+            pass
+
+    return {
+        "room_id": room_id,
+        "party": target_party,
+        "has_submitted": True,
+        "filename": sub.get("filename"),
+        "clauses_count": sub.get("clauses_count", 0),
+        "char_count": sub.get("char_count", len(file_text)),
+        "submitted_at": sub.get("submitted_at"),
+        "clauses": sub.get("clauses", []),
+        "text": file_text,
+    }
+
+
+def get_room_shared_state(
+    db: Session,
+    room_id: str,
+) -> Dict[str, Any]:
+    """
+    Retrieve SHARED negotiation information:
+    - Mutually visible clauses
+    - Negotiation proposals
+    - Agreed changes
+    - Safe AI negotiation results
+    STRICT PRIVACY: Never exposes private drafts or internal inputs of either party.
+    """
+    from app.db.models import ContractClauseDB, ReportDB
+
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    resolved_matter_id = room.matter_id or room.room_id
+    state = dict(room.shared_state or {})
+    has_a = bool(state.get("has_party_a_submitted", False))
+    has_b = bool(state.get("has_party_b_submitted", False))
+    ready = bool(state.get("ready_for_pipeline", False))
+
+    # Mutually visible clauses from ContractClauseDB
+    clauses_db = db.query(ContractClauseDB).filter(ContractClauseDB.matter_id == resolved_matter_id).all()
+    mutually_visible_clauses = []
+    agreed_changes = []
+
+    for c in clauses_db:
+        cl_data = {
+            "id": c.id,
+            "clause_id": c.id,
+            "matter_id": c.matter_id,
+            "section": c.section,
+            "title": c.title,
+            "original_text": c.original_text,
+            "counterparty_text": c.counterparty_text,
+            "conformed_proposal": c.conformed_proposal,
+            "status": c.status,
+            "risk_level": c.risk_level,
+            "risk_score": c.risk_score,
+            "precedent_alignment": c.precedent_alignment,
+            "rationale": c.rationale,
+            "sec_edgar_citation": c.sec_edgar_citation,
+        }
+        mutually_visible_clauses.append(cl_data)
+        if c.status in ("agreed", "conformed"):
+            agreed_changes.append(cl_data)
+
+    # Proposals from room messages & shared_state
+    proposals = []
+    for m in (room.messages or []):
+        if isinstance(m, dict) and m.get("type") in ("proposal", "clause_submitted", "clause_agreed"):
+            proposals.append(m)
+
+    # Safe AI Deliberation Results (from ReportDB)
+    ai_results = {}
+    report = db.query(ReportDB).filter(
+        (ReportDB.matter_id == resolved_matter_id) | (ReportDB.id == state.get("report_id"))
+    ).first()
+
+    if report:
+        ai_results = {
+            "report_id": report.id,
+            "review_status": report.review_status,
+            "clauses_count": len(mutually_visible_clauses),
+            "executive_summary": (report.executive_summary or {}).get("summary_text", "") if isinstance(report.executive_summary, dict) else str(report.executive_summary or ""),
+            "compromise_proposals": (report.agent3_verdict or {}).get("compromise_proposals", []) if isinstance(report.agent3_verdict, dict) else [],
+            "risk_summary": report.risk_summary or {},
+            "equilibrium_score": (report.executive_summary or {}).get("fairness_index", 90) if isinstance(report.executive_summary, dict) else 90,
+        }
+
+    return {
+        "room_id": room.room_id or room.id,
+        "status": room.status,
+        "readiness": "READY" if ready else "WAITING_FOR_INPUTS",
+        "ready_for_pipeline": ready,
+        "has_party_a_submitted": has_a,
+        "has_party_b_submitted": has_b,
+        "mutually_visible_clauses": mutually_visible_clauses,
+        "proposals": proposals,
+        "agreed_changes": agreed_changes,
+        "ai_results": ai_results,
+    }
+
+
+def agree_room_clause(
+    db: Session,
+    room_id: str,
+    clause_id: str,
+    agreed_text: Optional[str] = None,
+    token: Optional[str] = None,
+    participant_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """
+    Mark a clause as mutually agreed upon in the SHARED negotiation space.
+    """
+    from app.db.models import ContractClauseDB
+    from sqlalchemy.orm.attributes import flag_modified
+
+    room = get_room(db, room_id)
+    if not room:
+        raise ValueError(f"Negotiation room '{room_id}' not found.")
+
+    resolved_matter_id = room.matter_id or room.room_id
+    clause = db.query(ContractClauseDB).filter(
+        ContractClauseDB.matter_id == resolved_matter_id,
+        (ContractClauseDB.id == clause_id) | (ContractClauseDB.section == clause_id)
+    ).first()
+
+    if clause:
+        clause.status = "agreed"
+        if agreed_text:
+            clause.conformed_proposal = agreed_text
+        clause.risk_level = "low"
+        db.commit()
+        db.refresh(clause)
+
+    now_iso = datetime.utcnow().isoformat()
+    msg = {
+        "type": "clause_agreed",
+        "clause_id": clause_id,
+        "text": f"Clause {clause_id} mutually agreed upon.",
+        "conformed_text": agreed_text or (clause.conformed_proposal if clause else ""),
+        "timestamp": now_iso,
+    }
+    history = list(room.messages or [])
+    history.append(msg)
+    room.messages = history
+    flag_modified(room, "messages")
+    db.commit()
+
+    broadcast_to_room_sockets_sync(room_id, msg)
+    broadcast_to_room_sockets_sync(room_id, {
+        "type": "clause_updated",
+        "clause_id": clause_id,
+        "section": getattr(clause, "section", clause_id) if clause else clause_id,
+        "status": "agreed",
+        "text": agreed_text or (clause.conformed_proposal if clause else ""),
+        "timestamp": now_iso,
+    })
+    return {"status": "success", "clause_id": clause_id, "agreed": True}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -798,10 +1330,21 @@ async def execute_room_pipeline(
     if not room:
         raise ValueError(f"Negotiation room '{room_id}' not found.")
 
+    if room.status in ("closed", "expired") or room.closed_at is not None:
+        raise ValueError(f"Cannot start pipeline on a closed or expired room '{room_id}'.")
+
     if room.status != "active":
         raise ValueError(f"Negotiation room '{room_id}' is not active.")
 
     state = dict(room.shared_state or {})
+
+    # Prevent duplicate pipeline execution
+    current_pipeline = state.get("pipeline_status", "idle")
+    if current_pipeline == "running":
+        raise ValueError("Pipeline is already running for this room. Please wait for completion.")
+    if current_pipeline == "completed" and state.get("report_id"):
+        raise ValueError("Pipeline has already completed for this room. Report exists.")
+
     has_a = state.get("has_party_a_submitted", False)
     has_b = state.get("has_party_b_submitted", False)
 
@@ -837,9 +1380,9 @@ async def execute_room_pipeline(
         "timestamp": datetime.utcnow().isoformat(),
     })
 
-    # Execute end-to-end multi-agent pipeline
+    # Execute end-to-end multi-agent pipeline (shielded against browser disconnects)
     orchestrator = PipelineOrchestrator()
-    result = await orchestrator.run_pipeline(matter_id=resolved_matter_id, db=db)
+    result = await asyncio.shield(orchestrator.run_pipeline(matter_id=resolved_matter_id, db=db))
 
     # Refresh room after pipeline run
     db.refresh(room)

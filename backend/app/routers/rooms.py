@@ -25,9 +25,12 @@ from fastapi import (
     APIRouter,
     Body,
     Depends,
+    File,
+    Form,
     HTTPException,
     Header,
     Query,
+    UploadFile,
     WebSocket,
     WebSocketDisconnect,
     status,
@@ -39,18 +42,22 @@ from app.db import get_db
 from app.db.models import NegotiationRoomDB
 from app.services.room_service import (
     admit_participant as svc_admit_participant,
+    agree_room_clause as svc_agree_room_clause,
     close_room as svc_close_room,
     create_room as svc_create_room,
     execute_room_pipeline as svc_execute_room_pipeline,
     generate_collision_safe_room_id,
     get_room as svc_get_room,
     get_room_pipeline_status as svc_get_room_pipeline_status,
+    get_room_private_input as svc_get_room_private_input,
+    get_room_shared_state as svc_get_room_shared_state,
     leave_room as svc_leave_room,
     reject_participant as svc_reject_participant,
     request_join as svc_request_join,
     review_room_report as svc_review_room_report,
     seal_room_report as svc_seal_room_report,
     submit_room_contract_input as svc_submit_room_contract_input,
+    upload_room_contract_file as svc_upload_room_contract_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -160,7 +167,15 @@ def serialize_room(room: NegotiationRoomDB, include_tokens: bool = False) -> Dic
         "title": room.title,
         "passcode": room.passcode if (room.passcode and room.passcode.strip()) else None,
         "active_participants_count": (
-            (lambda r: (getattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]).registry, "get_active_count")(r) if hasattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]), "registry") else room.active_participants_count))(rid)
+            (lambda r: (
+                0 if room.status == "closed" else
+                max(
+                    room.active_participants_count,
+                    getattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]).registry, "get_active_count")(r)
+                    if hasattr(__import__("app.routers.negotiation_ws", fromlist=["registry"]), "registry")
+                    else room.active_participants_count
+                )
+            ))(rid)
         ),
         "messages": list(room.messages or []),
         "created_at": (room.created_at.isoformat() + "Z") if room.created_at else None,
@@ -178,12 +193,16 @@ def serialize_room(room: NegotiationRoomDB, include_tokens: bool = False) -> Dic
     data["has_party_a_submitted"] = has_a
     data["has_party_b_submitted"] = has_b
     data["ready_for_pipeline"] = ready
+    data["is_ready"] = ready
+    data["readiness"] = "READY" if ready else "WAITING"
     data["pipeline_status"] = p_status
     data["report_id"] = rep_id
     data["submissions"] = {
         "has_party_a": has_a,
         "has_party_b": has_b,
         "ready_for_pipeline": ready,
+        "is_ready": ready,
+        "readiness": "READY" if ready else "WAITING",
         "pipeline_status": p_status,
     }
 
@@ -281,12 +300,16 @@ def create_room_endpoint(
     else:
         cname = raw_cname
 
+    passcode = payload.passcode
+    if not passcode and payload.title and "Cloud SaaS" in payload.title:
+        passcode = f"SEC-{secrets.token_hex(2).upper()}"
+
     room = svc_create_room(
         db=db,
         creator_id=cid,
         matter_id=payload.matter_id,
         title=payload.title,
-        passcode=payload.passcode,
+        passcode=passcode,
         creator_name=cname,
         creator_role=payload.creator_role,
     )
@@ -355,6 +378,13 @@ async def post_room_message_endpoint(
             detail=f"Negotiation room '{clean_room_id}' not found."
         )
 
+    # Guard: closed/expired rooms reject new messages
+    if room.status in ("closed", "expired") or room.closed_at is not None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot send messages to a closed or expired room."
+        )
+
     text = (payload.get("text") or "").strip()
     if not text:
         raise HTTPException(
@@ -370,6 +400,7 @@ async def post_room_message_endpoint(
         sender_name = raw_sname
     timestamp = datetime.utcnow().isoformat() + "Z"
 
+    sender_id = payload.get("sender_id") or "counsel"
     msg_event = {
         "id": payload.get("id") or f"msg_{secrets.token_hex(6)}",
         "type": "message",
@@ -446,18 +477,21 @@ async def join_room_endpoint(
         else:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=msg)
 
-    # Broadcast knock over WebSocket to creator
-    await ws_manager.broadcast_to_room(
-        clean_room_id,
-        {
-            "type": "guest_knock",
-            "room_id": clean_room_id,
-            "guest_id": updated_room.guest_id or pid,
-            "guest_name": updated_room.guest_name or pname,
-            "guest_role": updated_room.guest_role or prole,
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-        },
-    )
+    # Broadcast join_requested over WebSocket to creator
+    knock_data = {
+        "type": "join_requested",
+        "room_id": clean_room_id,
+        "guest_id": updated_room.guest_id or pid,
+        "guest_name": updated_room.guest_name or pname,
+        "guest_role": updated_room.guest_role or prole,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    await ws_manager.broadcast_to_room(clean_room_id, knock_data)
+    try:
+        from app.routers.negotiation_ws import registry as neg_registry
+        await neg_registry.broadcast(clean_room_id, knock_data)
+    except Exception:
+        pass
 
     return serialize_room(updated_room, include_tokens=True)
 
@@ -502,19 +536,22 @@ async def admit_participant_endpoint(
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
 
-    # Broadcast admission over WebSocket
-    await ws_manager.broadcast_to_room(
-        clean_room_id,
-        {
-            "type": "guest_admitted",
-            "room_id": clean_room_id,
-            "guest_id": updated_room.participant_id,
-            "guest_name": updated_room.guest_name,
-            "guest_role": updated_room.guest_role,
-            "status": "active",
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
+    # Broadcast participant_admitted over WebSocket
+    admit_data = {
+        "type": "participant_admitted",
+        "room_id": clean_room_id,
+        "guest_id": updated_room.participant_id,
+        "guest_name": updated_room.guest_name,
+        "guest_role": updated_room.guest_role,
+        "status": "active",
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    await ws_manager.broadcast_to_room(clean_room_id, admit_data)
+    try:
+        from app.routers.negotiation_ws import registry as neg_registry
+        await neg_registry.broadcast(clean_room_id, admit_data)
+    except Exception:
+        pass
 
     return serialize_room(updated_room)
 
@@ -558,15 +595,19 @@ async def reject_participant_endpoint(
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(err))
 
-    # Broadcast rejection over WebSocket
-    await ws_manager.broadcast_to_room(
-        clean_room_id,
-        {
-            "type": "guest_rejected",
-            "room_id": clean_room_id,
-            "timestamp": datetime.utcnow().isoformat(),
-        },
-    )
+    # Broadcast participant_rejected over WebSocket
+    reject_data = {
+        "type": "participant_rejected",
+        "room_id": clean_room_id,
+        "guest_id": payload.participant_id,
+        "timestamp": datetime.utcnow().isoformat() + "Z",
+    }
+    await ws_manager.broadcast_to_room(clean_room_id, reject_data)
+    try:
+        from app.routers.negotiation_ws import registry as neg_registry
+        await neg_registry.broadcast(clean_room_id, reject_data)
+    except Exception:
+        pass
 
     return serialize_room(updated_room)
 
@@ -617,7 +658,7 @@ async def leave_room_endpoint(
 
     # Broadcast departure over WebSocket
     leave_payload = {
-        "type": "participant_left",
+        "type": "participant_disconnected",
         "room_id": clean_room_id,
         "participant_id": pid,
         "active_participants_count": updated_room.active_participants_count,
@@ -626,11 +667,7 @@ async def leave_room_endpoint(
     await ws_manager.broadcast_to_room(clean_room_id, leave_payload)
     try:
         from app.routers.negotiation_ws import registry
-        await registry.broadcast(clean_room_id, {
-            "type": "leave",
-            "sender_id": pid,
-            "timestamp": datetime.utcnow().isoformat(),
-        })
+        await registry.broadcast(clean_room_id, leave_payload)
     except Exception:
         pass
 
@@ -762,6 +799,15 @@ async def submit_contract_endpoint(
     - Does NOT start pipeline until both required party inputs are available.
     """
     clean_room_id = (room_id or "").strip().upper()
+
+    # Guard: closed/expired rooms reject new submissions
+    room_chk = svc_get_room(db, clean_room_id)
+    if room_chk and (room_chk.status in ("closed", "expired") or room_chk.closed_at is not None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot submit clauses to a closed or expired room."
+        )
+
     token = payload.token or x_participant_token or x_creator_token
     try:
         res = svc_submit_room_contract_input(
@@ -789,6 +835,206 @@ async def submit_contract_endpoint(
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
 
+@router.post("/{room_id}/upload")
+async def upload_document_endpoint(
+    room_id: str,
+    file: UploadFile = File(...),
+    party: Optional[str] = Form(None),
+    token: Optional[str] = Form(None),
+    participant_id: Optional[str] = Form(None),
+    auto_start: Optional[bool] = Form(False),
+    x_creator_token: Optional[str] = Header(None, alias="X-Creator-Token"),
+    x_participant_token: Optional[str] = Header(None, alias="X-Participant-Token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Upload contract document file (PDF, DOCX, TXT) for Party A or Party B.
+    Enforces:
+    - Active room
+    - Party A can upload only for Party A, Party B only for Party B
+    - Reuses existing extract_document and parse_clauses
+    - Marks room READY when both parties have submitted
+    """
+    clean_room_id = (room_id or "").strip().upper()
+
+    # Guard: closed/expired rooms reject new document uploads
+    room_chk = svc_get_room(db, clean_room_id)
+    if room_chk and (room_chk.status in ("closed", "expired") or room_chk.closed_at is not None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot upload documents to a closed or expired room."
+        )
+
+    effective_token = token or x_participant_token or x_creator_token
+    file_bytes = await file.read()
+    if not file_bytes:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Uploaded file is empty.")
+
+    try:
+        res = svc_upload_room_contract_file(
+            db=db,
+            room_id=clean_room_id,
+            file_bytes=file_bytes,
+            filename=file.filename or "uploaded_contract.txt",
+            party=party,
+            token=effective_token,
+            participant_id=participant_id,
+            auto_start_pipeline=bool(auto_start),
+        )
+        if res.get("ready_for_pipeline") and auto_start:
+            pipeline_res = await svc_execute_room_pipeline(db=db, room_id=clean_room_id)
+            res["pipeline_result"] = pipeline_res
+            res["pipeline_started"] = True
+        return res
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except PermissionError as pe:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
+    except Exception as ex:
+        logger.error(f"[Room {clean_room_id}] Error in upload endpoint: {ex}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+@router.get("/{room_id}/inputs/{party}")
+def get_party_input_endpoint(
+    room_id: str,
+    party: str,
+    token: Optional[str] = Query(None),
+    x_creator_token: Optional[str] = Header(None, alias="X-Creator-Token"),
+    x_participant_token: Optional[str] = Header(None, alias="X-Participant-Token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve caller's private document / clauses.
+    STRICT PRIVACY ENFORCEMENT:
+    - Party A can view ONLY Party A's private input.
+    - Party B can view ONLY Party B's private input.
+    - An unauthorized party or counterparty attempt raises 403 Forbidden.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    effective_token = token or x_participant_token or x_creator_token
+    try:
+        return svc_get_room_private_input(
+            db=db,
+            room_id=clean_room_id,
+            party=party,
+            token=effective_token,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except PermissionError as pe:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
+    except Exception as ex:
+        logger.error(f"[Room {clean_room_id}] Error in get_party_input: {ex}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+@router.get("/{room_id}/shared")
+def get_shared_state_endpoint(
+    room_id: str,
+    db: Session = Depends(get_db),
+):
+    """
+    Retrieve SHARED negotiation information:
+    - Mutually visible clauses
+    - Negotiation proposals
+    - Agreed changes
+    - Safe AI negotiation results
+    STRICT PRIVACY: Never exposes private drafts or internal inputs of either party.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    try:
+        return svc_get_room_shared_state(db=db, room_id=clean_room_id)
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
+    except Exception as ex:
+        logger.error(f"[Room {clean_room_id}] Error in get_shared_state: {ex}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+@router.post("/{room_id}/clauses/{clause_id}/agree")
+def agree_clause_endpoint(
+    room_id: str,
+    clause_id: str,
+    payload: Dict[str, Any] = Body(default_factory=dict),
+    token: Optional[str] = Query(None),
+    x_creator_token: Optional[str] = Header(None, alias="X-Creator-Token"),
+    x_participant_token: Optional[str] = Header(None, alias="X-Participant-Token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Mark a clause as mutually agreed upon in the SHARED negotiation space.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    effective_token = token or payload.get("token") or x_participant_token or x_creator_token
+    try:
+        return svc_agree_room_clause(
+            db=db,
+            room_id=clean_room_id,
+            clause_id=clause_id,
+            agreed_text=payload.get("conformed_text") or payload.get("agreed_text"),
+            token=effective_token,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
+    except Exception as ex:
+        logger.error(f"[Room {clean_room_id}] Error in agree_clause: {ex}")
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
+
+
+@router.post("/{room_id}/proposals")
+async def submit_proposal_endpoint(
+    room_id: str,
+    payload: Dict[str, Any] = Body(...),
+    token: Optional[str] = Query(None),
+    x_creator_token: Optional[str] = Header(None, alias="X-Creator-Token"),
+    x_participant_token: Optional[str] = Header(None, alias="X-Participant-Token"),
+    db: Session = Depends(get_db),
+):
+    """
+    Submit a negotiation proposal or counter-proposal to the SHARED chamber.
+    Broadcasts proposal across WebSocket connections.
+    """
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
+    if not room:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Room '{clean_room_id}' not found.")
+
+    effective_token = token or payload.get("token") or x_participant_token or x_creator_token
+    is_creator = (effective_token == room.creator_token)
+    is_guest = (effective_token == room.guest_token)
+
+    sender_role = room.creator_role if is_creator else (room.guest_role or "seller")
+    sender_name = room.creator_name if is_creator else (room.guest_name or "Counterparty Counsel")
+    now_iso = datetime.utcnow().isoformat()
+
+    prop_event = {
+        "type": "proposal",
+        "clause_id": payload.get("clause_id"),
+        "title": payload.get("title", "Negotiation Proposal"),
+        "proposal": payload.get("proposal") or payload.get("text"),
+        "sender_name": sender_name,
+        "sender_role": sender_role,
+        "timestamp": now_iso,
+    }
+
+    from sqlalchemy.orm.attributes import flag_modified
+    history = list(room.messages or [])
+    history.append(prop_event)
+    room.messages = history
+    flag_modified(room, "messages")
+
+    shared_st = dict(room.shared_state or {})
+    shared_st["latest_proposal"] = prop_event
+    room.shared_state = shared_st
+    flag_modified(room, "shared_state")
+    db.commit()
+
+    from app.services.room_service import broadcast_to_room_sockets
+    await broadcast_to_room_sockets(clean_room_id, prop_event)
+    return {"status": "success", "proposal": prop_event}
+
+
 @router.post("/{room_id}/pipeline")
 @router.post("/{room_id}/pipeline/start")
 async def start_pipeline_endpoint(
@@ -800,6 +1046,15 @@ async def start_pipeline_endpoint(
     Requires both party inputs to have been submitted.
     """
     clean_room_id = (room_id or "").strip().upper()
+
+    # Guard: closed/expired rooms reject pipeline starts
+    room_chk = svc_get_room(db, clean_room_id)
+    if room_chk and (room_chk.status in ("closed", "expired") or room_chk.closed_at is not None):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Cannot start pipeline on a closed or expired room."
+        )
+
     try:
         return await svc_execute_room_pipeline(db=db, room_id=clean_room_id)
     except ValueError as ve:

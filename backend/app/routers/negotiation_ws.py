@@ -80,9 +80,8 @@ class NegotiationConnectionRegistry:
                     alive.append(e)
             self._rooms[room_id] = alive
 
-            # Check unique participant roles/IDs already in room
-            current_pids = {entry["participant_id"] for entry in self._rooms[room_id]}
-            if len(current_pids) >= 2 and participant_id not in current_pids:
+            # Strict maximum 2 active participants in bilateral room
+            if len(self._rooms[room_id]) >= 2:
                 await websocket.send_json({
                     "type": "system",
                     "error": "Maximum 2 active participants reached for this negotiation room."
@@ -284,33 +283,36 @@ async def negotiation_websocket_endpoint(
             await websocket.close(code=1008)
             return
 
-        # Verification: Only admitted participants can connect
-        req_role = (participant_id or "").lower()
-        if req_role == "creator":
-            is_creator = True
-            is_admitted_guest = False
-        elif req_role in ("participant", "guest", "seller"):
-            is_creator = False
-            is_admitted_guest = True
-        else:
-            is_creator = (token and token == room.creator_token) or (participant_id and participant_id == room.creator_id)
-            is_admitted_guest = (
-                ((token and token == room.guest_token) or (participant_id and participant_id in (room.participant_id, room.guest_id)))
-                and (room.guest_status == "admitted")
-            )
+        # Strict Verification: Only creator or admitted participant with matching token/id can connect
+        is_creator = False
+        is_admitted_guest = False
 
-        # Resilient fallback: if room is active or guest was admitted, allow counterparty connection
-        if not is_creator and not is_admitted_guest:
-            if room.guest_status == "admitted" or room.status == "active":
+        if (token and token == room.creator_token) or (participant_id and participant_id == room.creator_id):
+            is_creator = True
+        elif (
+            ((token and token == room.guest_token) or (participant_id and participant_id in (room.participant_id, room.guest_id)))
+            and (room.guest_status == "admitted" or room.status == "active")
+        ):
+            is_admitted_guest = True
+        elif participant_id in ("creator", "participant", "seller", "buyer") and token:
+            if token == room.creator_token:
+                is_creator = True
+            elif token == room.guest_token and (room.guest_status == "admitted" or room.status == "active"):
                 is_admitted_guest = True
-            elif not token and not participant_id:
-                await websocket.accept()
-                await websocket.send_json({
-                    "type": "system",
-                    "error": "Unauthorized: Only admitted participants can connect to this negotiation room."
-                })
-                await websocket.close(code=1008)
-                return
+
+        if not is_creator and not is_admitted_guest:
+            await websocket.accept()
+            await websocket.send_json({
+                "type": "room_error",
+                "error": "Unauthorized: Access to this private room requires admission approval by the creator.",
+                "code": "unauthorized",
+            })
+            await websocket.send_json({
+                "type": "system",
+                "error": "Unauthorized: Access to this private room requires admission approval by the creator."
+            })
+            await websocket.close(code=1008)
+            return
 
         if is_creator:
             pid = room.creator_id or "creator"
@@ -318,18 +320,18 @@ async def negotiation_websocket_endpoint(
             sender_role = "buyer" if creator_r == "buyer" else "seller"
             raw_cname = (room.creator_name or "").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
             if not raw_cname or "negotiation demo" in raw_cname.lower():
-                sender_name = "Elena Rostova (Buyer)" if sender_role == "buyer" else "Marcus Vance (Seller)"
+                sender_name = "Elena Rostova" if sender_role == "buyer" else "Marcus Vance"
             else:
-                sender_name = f"{raw_cname} ({sender_role.capitalize()})"
+                sender_name = raw_cname
         else:
             pid = room.participant_id or room.guest_id or "seller_guest"
             creator_r = (room.creator_role or "buyer").lower()
             sender_role = "seller" if creator_r == "buyer" else "buyer"
             raw_gname = (room.guest_name or "").replace(" (seller)", "").replace(" (buyer)", "").replace(" (Seller)", "").replace(" (Buyer)", "").strip()
             if not raw_gname or "negotiation demo" in raw_gname.lower():
-                sender_name = "Marcus Vance (Seller)" if sender_role == "seller" else "Elena Rostova (Buyer)"
+                sender_name = "Marcus Vance" if sender_role == "seller" else "Elena Rostova"
             else:
-                sender_name = f"{raw_gname} ({sender_role.capitalize()})"
+                sender_name = raw_gname
 
     # Connect to in-memory registry (enforces max 2 active participants)
     registered = await registry.register(clean_room_id, pid, websocket)
@@ -346,47 +348,20 @@ async def negotiation_websocket_endpoint(
             db.commit()
             sync_room(cur_room)
 
-    # Broadcast shared 'join' event to both participants
+    # Broadcast participant_connected (and join for compatibility) to both participants
     now_iso = datetime.utcnow().isoformat() + "Z"
-    join_event = {
-        "type": "join",
+    connect_event = {
+        "type": "participant_connected",
         "sender_id": pid,
         "sender_name": sender_name,
         "sender_role": sender_role,
         "active_participants_count": active_cnt,
         "timestamp": now_iso,
     }
-    # Ephemeral broadcast only: do not persist transient socket joins into database messages log
-    await registry.broadcast(clean_room_id, join_event)
+    await registry.broadcast(clean_room_id, connect_event)
 
-    # Send recent message history to the newly connected participant
-    try:
-        existing_messages = list(room.messages or [])
-        clean_history = []
-        for m in existing_messages[-100:]:
-            mc = dict(m)
-            m_sname = str(mc.get("sender_name") or "")
-            m_srole = str(mc.get("sender_role") or "").lower()
-            if not m_sname or "negotiation demo" in m_sname.lower() or m_sname.startswith("Counsel") or m_sname.startswith("Counterparty"):
-                mc["sender_name"] = "Marcus Vance (Seller)" if (m_srole == "seller" or "seller" in m_sname.lower()) else "Elena Rostova (Buyer)"
-            if mc.get("type") == "system" and "text" in mc:
-                mc["text"] = (
-                    str(mc["text"])
-                    .replace("Negotiation Demo (Seller)", "Marcus Vance (Seller)")
-                    .replace("Negotiation Demo (Buyer)", "Elena Rostova (Buyer)")
-                    .replace("Participant Negotiation Demo was admitted", "Participant Marcus Vance (Seller) was admitted")
-                    .replace("Negotiation Demo", "Participant Marcus Vance (Seller)")
-                )
-            clean_history.append(mc)
-
-        if clean_history:
-            await websocket.send_json({
-                "type": "history",
-                "messages": clean_history,
-                "timestamp": datetime.utcnow().isoformat() + "Z",
-            })
-    except Exception as ex:
-        logger.debug(f"[NegotiationWS {clean_room_id}] Error sending message history: {ex}")
+    # Message history is available on-demand via REST (/api/rooms/{room_id}/messages)
+    # and via WS 'get_history' event.
 
     try:
         while True:
@@ -408,8 +383,10 @@ async def negotiation_websocket_endpoint(
             elif event_type == "room_closed":
                 if not is_creator:
                     await websocket.send_json({
-                        "type": "system",
-                        "error": "Unauthorized: Only the creator can close the negotiation room."
+                        "type": "room_error",
+                        "error": "Unauthorized: Only the creator can close the negotiation room.",
+                        "code": "forbidden",
+                        "timestamp": timestamp,
                     })
                     continue
 
@@ -435,8 +412,8 @@ async def negotiation_websocket_endpoint(
                 await registry.close_room_and_disconnect(clean_room_id, reason=reason)
                 break
 
-            # 3. leave
-            elif event_type == "leave":
+            # 3. leave / participant_disconnected
+            elif event_type in ("leave", "participant_disconnected"):
                 with SessionLocal() as db:
                     cur_room = db.query(NegotiationRoomDB).filter(
                         (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
@@ -448,10 +425,11 @@ async def negotiation_websocket_endpoint(
                         db.commit()
 
                 leave_event = {
-                    "type": "leave",
+                    "type": "participant_disconnected",
                     "sender_id": pid,
                     "sender_name": sender_name,
                     "sender_role": sender_role,
+                    "status": "disconnected",
                     "timestamp": timestamp,
                 }
                 persist_event_to_db(clean_room_id, leave_event)
@@ -478,26 +456,84 @@ async def negotiation_websocket_endpoint(
                 persist_event_to_db(clean_room_id, msg_event)
                 await registry.broadcast(clean_room_id, msg_event)
 
-            # 5. clause_submitted
-            elif event_type == "clause_submitted":
+            # 5. clause_updated / clause_submitted
+            elif event_type in ("clause_updated", "clause_submitted"):
+                clause_id = data.get("clause_id") or data.get("id")
+                section = data.get("section")
+                text = data.get("text") or data.get("agreed_text") or data.get("conformed_text") or ""
+                clause_status = data.get("status") or "updated"
+
                 clause_event = {
-                    "type": "clause_submitted",
+                    "type": "clause_updated",
                     "sender_id": pid,
                     "sender_name": sender_name,
                     "sender_role": sender_role,
-                    "clause_id": data.get("clause_id"),
-                    "section": data.get("section"),
-                    "text": data.get("text", ""),
+                    "clause_id": clause_id,
+                    "section": section,
+                    "text": text,
+                    "status": clause_status,
                     "timestamp": timestamp,
                 }
                 shared_update = {
-                    "last_clause_submitted": data.get("clause_id"),
+                    "last_clause_updated": clause_id,
+                    "last_clause_submitted": clause_id,
                     "last_submitted_by": sender_role,
                 }
                 persist_event_to_db(clean_room_id, clause_event, shared_state_update=shared_update)
                 await registry.broadcast(clean_room_id, clause_event)
 
-            # 6. proposal
+            # 6. join_requested / guest_knock
+            elif event_type in ("join_requested", "guest_knock"):
+                knock_data = {
+                    "type": "join_requested",
+                    "room_id": clean_room_id,
+                    "guest_id": pid,
+                    "guest_name": sender_name,
+                    "guest_role": sender_role,
+                    "timestamp": timestamp,
+                }
+                await registry.broadcast(clean_room_id, knock_data)
+
+            # 7. participant_admitted / guest_admitted
+            elif event_type in ("participant_admitted", "guest_admitted"):
+                if not is_creator:
+                    await websocket.send_json({
+                        "type": "room_error",
+                        "error": "Unauthorized: Only the creator can admit participants.",
+                        "code": "forbidden",
+                        "timestamp": timestamp,
+                    })
+                    continue
+                admit_data = {
+                    "type": "participant_admitted",
+                    "room_id": clean_room_id,
+                    "guest_id": data.get("participant_id") or data.get("guest_id"),
+                    "status": "active",
+                    "timestamp": timestamp,
+                }
+                persist_event_to_db(clean_room_id, admit_data)
+                await registry.broadcast(clean_room_id, admit_data)
+
+            # 8. participant_rejected / guest_rejected
+            elif event_type in ("participant_rejected", "guest_rejected"):
+                if not is_creator:
+                    await websocket.send_json({
+                        "type": "room_error",
+                        "error": "Unauthorized: Only the creator can reject participants.",
+                        "code": "forbidden",
+                        "timestamp": timestamp,
+                    })
+                    continue
+                reject_data = {
+                    "type": "participant_rejected",
+                    "room_id": clean_room_id,
+                    "guest_id": data.get("participant_id") or data.get("guest_id"),
+                    "timestamp": timestamp,
+                }
+                persist_event_to_db(clean_room_id, reject_data)
+                await registry.broadcast(clean_room_id, reject_data)
+
+            # 9. proposal
             elif event_type == "proposal":
                 prop_event = {
                     "type": "proposal",
@@ -518,7 +554,18 @@ async def negotiation_websocket_endpoint(
                 persist_event_to_db(clean_room_id, prop_event, shared_state_update=shared_update)
                 await registry.broadcast(clean_room_id, prop_event)
 
-            # 7. system
+            # 10. room_error
+            elif event_type == "room_error":
+                err_event = {
+                    "type": "room_error",
+                    "sender_id": pid,
+                    "error": data.get("error") or "An error occurred in negotiation room.",
+                    "code": data.get("code") or "room_error",
+                    "timestamp": timestamp,
+                }
+                await websocket.send_json(err_event)
+
+            # 11. system
             elif event_type == "system":
                 sys_event = {
                     "type": "system",
@@ -546,7 +593,7 @@ async def negotiation_websocket_endpoint(
         await registry.unregister(clean_room_id, websocket)
         active_count = registry.get_active_count(clean_room_id)
         disc_event = {
-            "type": "leave",
+            "type": "participant_disconnected",
             "sender_id": pid,
             "sender_name": sender_name,
             "sender_role": sender_role,
@@ -566,7 +613,12 @@ async def negotiation_websocket_endpoint(
                     (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
                 ).first()
                 if cur_room:
-                    cur_room.active_participants_count = cur_count
+                    if cur_room.status in ("closed", "expired"):
+                        cur_room.active_participants_count = 0
+                    elif cur_room.guest_status == "left":
+                        cur_room.active_participants_count = 1
+                    else:
+                        cur_room.active_participants_count = cur_count
                     db.commit()
                     sync_room(cur_room)
         except Exception as ex:

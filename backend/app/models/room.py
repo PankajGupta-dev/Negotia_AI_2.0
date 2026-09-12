@@ -16,6 +16,7 @@ def generate_room_id(prefix: str = "NEG") -> str:
 class RoomStatus(str, Enum):
     WAITING = "waiting"
     ACTIVE = "active"
+    COMPLETED = "completed"
     CLOSED = "closed"
     EXPIRED = "expired"
 

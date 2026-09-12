@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { Button } from '../components/Button';
 import { HairlineCard } from '../components/HairlineCard';
@@ -29,6 +29,7 @@ const STORAGE_ACTIVE_TAB = 'negotia_active_room_tab';
 export const PrivateRoom: React.FC = () => {
   const { roomId: urlRoomId } = useParams<{ roomId?: string }>();
   const navigate = useNavigate();
+  const location = useLocation();
   const { user, role } = useAuth();
   const { matterId, matterTitle } = useIntake();
 
@@ -58,6 +59,9 @@ export const PrivateRoom: React.FC = () => {
   );
   const [isRoomClosed, setIsRoomClosed] = useState<boolean>(false);
   const [isCreating, setIsCreating] = useState<boolean>(false);
+  const [isAdmitting, setIsAdmitting] = useState<boolean>(false);
+  const [isRejecting, setIsRejecting] = useState<boolean>(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
   const [copied, setCopied] = useState<boolean>(false);
   const [roomDetails, setRoomDetails] = useState<RoomPublicDetail | null>(null);
 
@@ -97,14 +101,23 @@ export const PrivateRoom: React.FC = () => {
     localStorage.removeItem(STORAGE_PARTICIPANT_TOKEN);
   };
 
-  // Pre-fill URL parameter if provided
+  // Pre-fill URL parameter or redirect query/state if provided
   useEffect(() => {
-    if (urlRoomId) {
-      setJoinRoomId(urlRoomId.toUpperCase());
+    const params = new URLSearchParams(location.search);
+    const queryRoom = params.get('room') || (location.state as any)?.roomId || urlRoomId;
+    const errorMsg = (location.state as any)?.error;
+
+    if (queryRoom) {
+      setJoinRoomId(queryRoom.toUpperCase());
       setActiveTab('participant');
       localStorage.setItem(STORAGE_ACTIVE_TAB, 'participant');
     }
-  }, [urlRoomId]);
+    if (errorMsg) {
+      setRejectionNotice(errorMsg);
+      setActiveTab('participant');
+      localStorage.setItem(STORAGE_ACTIVE_TAB, 'participant');
+    }
+  }, [urlRoomId, location.search, location.state]);
 
   // Handle tab switching with persistent preference
   const handleSelectTab = (tab: 'creator' | 'participant') => {
@@ -442,7 +455,7 @@ export const PrivateRoom: React.FC = () => {
       initWebSocket(res.room_id, res.creator_token, 'creator');
       startPolling(res.room_id, 'creator');
     } catch (err: any) {
-      alert(`Failed to create private negotiation: ${err.message || err}`);
+      setCreationError(`Failed to create private negotiation: ${err.message || err}`);
     } finally {
       setIsCreating(false);
     }
@@ -456,7 +469,8 @@ export const PrivateRoom: React.FC = () => {
   };
 
   const handleAdmitApplicant = async () => {
-    if (!createdRoomId) return;
+    if (!createdRoomId || isAdmitting) return;
+    setIsAdmitting(true);
     try {
       await admitParticipant(createdRoomId, pendingApplicant?.id, creatorToken);
       setPendingApplicant(null);
@@ -468,16 +482,21 @@ export const PrivateRoom: React.FC = () => {
       navigate(`/negotiations/${createdRoomId}`);
     } catch (err: any) {
       alert(`Failed to admit participant: ${err.message || err}`);
+    } finally {
+      setIsAdmitting(false);
     }
   };
 
   const handleRejectApplicant = async () => {
-    if (!createdRoomId) return;
+    if (!createdRoomId || isRejecting) return;
+    setIsRejecting(true);
     try {
       await rejectParticipant(createdRoomId, pendingApplicant?.id, creatorToken);
       setPendingApplicant(null);
     } catch (err: any) {
       alert(`Failed to reject participant: ${err.message || err}`);
+    } finally {
+      setIsRejecting(false);
     }
   };
 
@@ -641,6 +660,13 @@ export const PrivateRoom: React.FC = () => {
                   Generate a collision-safe Room ID (e.g. <span className="font-mono text-primary font-bold">NEG-8K4P7M</span>) to invite your counterparty.
                 </p>
               </div>
+
+              {creationError && (
+                <div className="p-3 bg-error-container/20 border border-error/40 rounded-lg text-xs text-error flex items-center justify-between">
+                  <span>{creationError}</span>
+                  <button type="button" onClick={() => setCreationError(null)} className="text-xs font-bold text-error ml-2 cursor-pointer">×</button>
+                </div>
+              )}
 
               <div className="space-y-1">
                 <label className="text-xs font-mono text-outline">Negotiation Title</label>
@@ -812,17 +838,19 @@ export const PrivateRoom: React.FC = () => {
                       variant="primary"
                       size="sm"
                       icon="check_circle"
+                      disabled={isAdmitting || isRejecting}
                       onClick={handleAdmitApplicant}
                     >
-                      Admit
+                      {isAdmitting ? 'Admitting...' : 'Admit'}
                     </Button>
                     <Button
                       variant="secondary"
                       size="sm"
                       icon="cancel"
+                      disabled={isAdmitting || isRejecting}
                       onClick={handleRejectApplicant}
                     >
-                      Reject
+                      {isRejecting ? 'Rejecting...' : 'Reject'}
                     </Button>
                   </div>
                 </div>
@@ -904,8 +932,9 @@ export const PrivateRoom: React.FC = () => {
               </div>
 
               {rejectionNotice && (
-                <div className="p-3 bg-error-container/20 border border-error/40 rounded-lg text-xs text-error">
-                  {rejectionNotice}
+                <div className="p-3 bg-error-container/20 border border-error/40 rounded-lg text-xs text-error flex items-center justify-between">
+                  <span>{rejectionNotice}</span>
+                  <button type="button" onClick={() => setRejectionNotice(null)} className="text-xs font-bold text-error ml-2 cursor-pointer">×</button>
                 </div>
               )}
 
@@ -957,7 +986,7 @@ export const PrivateRoom: React.FC = () => {
                   Join request submitted for Room <span className="font-mono text-primary font-bold">{joinRoomId}</span>.
                 </p>
                 <p className="text-xs text-outline-variant">
-                  You can switch tabs or navigate across the platform freely; your request is preserved. You will automatically enter the negotiation workspace as soon as the creator admits you.
+                  Room has exactly 2 participants: creator + admitted counterparty. Once the creator approves your admission request, you will automatically enter the negotiation chamber.
                 </p>
               </div>
 
