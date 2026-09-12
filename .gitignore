@@ -49,6 +49,9 @@ env/
 .ruff_cache/
 *.db
 *.sqlite
+*.sqlite3
+negotia.db
+negotiadb.sqlite3
 uploads/
 backend/uploads/
 
