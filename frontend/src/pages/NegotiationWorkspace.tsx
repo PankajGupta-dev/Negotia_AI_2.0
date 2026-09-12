@@ -1524,8 +1524,8 @@ export const NegotiationWorkspace: React.FC = () => {
                         : 'Connecting...'}
                     </span>
                   </div>
-                  <span className="text-[10px] text-outline font-mono font-bold">
-                    Capacity: {displayCapacity} / 2
+                  <span className="text-[10px] text-[#78716C] font-mono font-bold">
+                    Capacity: {bilateralEvents.filter(e => e.type === 'join').length} / 2
                   </span>
                 </div>
 
@@ -1533,15 +1533,15 @@ export const NegotiationWorkspace: React.FC = () => {
                 {presenceNotice && (
                   <div className={`px-2.5 py-1 text-xs rounded border flex items-center justify-between transition-all duration-300 ${
                     presenceNotice.type === 'join'
-                      ? 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400'
+                      ? 'bg-[#DCFCE7] border-[#86EFAC] text-[#166534]'
                       : presenceNotice.type === 'leave'
-                      ? 'bg-amber-500/10 border-amber-500/30 text-amber-400'
+                      ? 'bg-[#FEF3C7] border-[#FCD34D] text-[#92400E]'
                       : presenceNotice.type === 'closed'
-                      ? 'bg-rose-500/10 border-rose-500/30 text-rose-400'
-                      : 'bg-primary/10 border-primary/30 text-primary'
+                      ? 'bg-[#FEE2E2] border-[#FCA5A5] text-[#991B1B]'
+                      : 'bg-[#EDE7DC] border-[#D6CEBE] text-[#1C1917]'
                   }`}>
-                    <span className="font-mono text-[11px] font-medium">{presenceNotice.text}</span>
-                    <button onClick={() => setPresenceNotice(null)} className="text-outline hover:text-on-surface text-xs ml-2 cursor-pointer">×</button>
+                    <span className="font-mono text-[11px] font-bold">{presenceNotice.text}</span>
+                    <button onClick={() => setPresenceNotice(null)} className="text-[#78716C] hover:text-[#1C1917] text-xs ml-2 cursor-pointer font-bold">×</button>
                   </div>
                 )}
 
