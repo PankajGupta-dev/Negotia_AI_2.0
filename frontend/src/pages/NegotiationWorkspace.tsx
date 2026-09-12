@@ -123,7 +123,7 @@ export const NegotiationWorkspace: React.FC = () => {
   const [liveStatus, setLiveStatus] = useState<string>('Analysis complete');
   const [activeAgent, setActiveAgent] = useState<string>('a3');
 
-  const targetMatterId = id || matterId || '2025-INT-809';
+  const targetMatterId = (id || matterId || '2025-INT-809').trim().toUpperCase();
 
   const [consoleTab, setConsoleTab] = useState<'ai_agents' | 'bilateral_room'>(
     targetMatterId.startsWith('NEG-') ? 'bilateral_room' : 'ai_agents'

@@ -29,6 +29,7 @@ from fastapi import (
     WebSocketDisconnect,
     status,
 )
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from sqlalchemy.orm.attributes import flag_modified
 
@@ -128,10 +129,11 @@ registry = NegotiationConnectionRegistry()
 
 def persist_event_to_db(room_id: str, event: dict, shared_state_update: Optional[dict] = None):
     """Persist event message and updated shared state to the SQLite DB."""
+    clean_room_id = (room_id or "").strip().upper()
     try:
         with SessionLocal() as session:
             room = session.query(NegotiationRoomDB).filter(
-                (NegotiationRoomDB.room_id == room_id) | (NegotiationRoomDB.id == room_id)
+                (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
             ).first()
             if room:
                 messages = list(room.messages or [])
@@ -147,7 +149,7 @@ def persist_event_to_db(room_id: str, event: dict, shared_state_update: Optional
 
                 session.commit()
     except Exception as ex:
-        logger.warning(f"[NegotiationWS {room_id}] Failed persisting event: {ex}")
+        logger.warning(f"[NegotiationWS {clean_room_id}] Failed persisting event: {ex}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -165,14 +167,15 @@ async def negotiation_websocket_endpoint(
     WebSocket deliberation endpoint for 2-party rooms.
     Only admitted participants can connect. Maximum 2 active participants.
     """
+    clean_room_id = (room_id or "").strip().upper()
     with SessionLocal() as db:
         room = db.query(NegotiationRoomDB).filter(
-            (NegotiationRoomDB.room_id == room_id) | (NegotiationRoomDB.id == room_id)
+            (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
         ).first()
 
         if not room:
             await websocket.accept()
-            await websocket.send_json({"type": "system", "error": f"Negotiation room '{room_id}' not found."})
+            await websocket.send_json({"type": "system", "error": f"Negotiation room '{clean_room_id}' not found."})
             await websocket.close(code=1008)
             return
 
@@ -203,7 +206,7 @@ async def negotiation_websocket_endpoint(
         sender_role = room.creator_role if is_creator else (room.guest_role or "seller")
 
     # Connect to in-memory registry (enforces max 2 active participants)
-    registered = await registry.register(room_id, pid, websocket)
+    registered = await registry.register(clean_room_id, pid, websocket)
     if not registered:
         return
 
@@ -214,11 +217,11 @@ async def negotiation_websocket_endpoint(
         "sender_id": pid,
         "sender_name": sender_name,
         "sender_role": sender_role,
-        "active_participants_count": registry.get_active_count(room_id),
+        "active_participants_count": registry.get_active_count(clean_room_id),
         "timestamp": now_iso,
     }
-    persist_event_to_db(room_id, join_event)
-    await registry.broadcast(room_id, join_event)
+    persist_event_to_db(clean_room_id, join_event)
+    await registry.broadcast(clean_room_id, join_event)
 
     try:
         while True:
@@ -248,7 +251,7 @@ async def negotiation_websocket_endpoint(
                 # Close room in database
                 with SessionLocal() as db:
                     cur_room = db.query(NegotiationRoomDB).filter(
-                        (NegotiationRoomDB.room_id == room_id) | (NegotiationRoomDB.id == room_id)
+                        (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
                     ).first()
                     if cur_room:
                         cur_room.status = "closed"
@@ -257,21 +260,21 @@ async def negotiation_websocket_endpoint(
                         db.commit()
 
                 reason = data.get("reason", "Negotiation concluded and closed by creator.")
-                persist_event_to_db(room_id, {
+                persist_event_to_db(clean_room_id, {
                     "type": "room_closed",
                     "sender_id": pid,
                     "reason": reason,
                     "timestamp": timestamp,
                 })
                 # Broadcast room_closed and disconnect both sides
-                await registry.close_room_and_disconnect(room_id, reason=reason)
+                await registry.close_room_and_disconnect(clean_room_id, reason=reason)
                 break
 
             # 3. leave
             elif event_type == "leave":
                 with SessionLocal() as db:
                     cur_room = db.query(NegotiationRoomDB).filter(
-                        (NegotiationRoomDB.room_id == room_id) | (NegotiationRoomDB.id == room_id)
+                        (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
                     ).first()
                     if cur_room:
                         if not is_creator:
@@ -286,9 +289,9 @@ async def negotiation_websocket_endpoint(
                     "sender_role": sender_role,
                     "timestamp": timestamp,
                 }
-                persist_event_to_db(room_id, leave_event)
-                await registry.unregister(room_id, pid)
-                await registry.broadcast(room_id, leave_event)
+                persist_event_to_db(clean_room_id, leave_event)
+                await registry.unregister(clean_room_id, pid)
+                await registry.broadcast(clean_room_id, leave_event)
                 await websocket.close(code=1000)
                 break
 
@@ -302,8 +305,8 @@ async def negotiation_websocket_endpoint(
                     "text": data.get("text", ""),
                     "timestamp": timestamp,
                 }
-                persist_event_to_db(room_id, msg_event)
-                await registry.broadcast(room_id, msg_event)
+                persist_event_to_db(clean_room_id, msg_event)
+                await registry.broadcast(clean_room_id, msg_event)
 
             # 5. clause_submitted
             elif event_type == "clause_submitted":
@@ -321,8 +324,8 @@ async def negotiation_websocket_endpoint(
                     "last_clause_submitted": data.get("clause_id"),
                     "last_submitted_by": sender_role,
                 }
-                persist_event_to_db(room_id, clause_event, shared_state_update=shared_update)
-                await registry.broadcast(room_id, clause_event)
+                persist_event_to_db(clean_room_id, clause_event, shared_state_update=shared_update)
+                await registry.broadcast(clean_room_id, clause_event)
 
             # 6. proposal
             elif event_type == "proposal":
@@ -342,8 +345,8 @@ async def negotiation_websocket_endpoint(
                     "last_proposal_clause": data.get("clause_id"),
                     "last_proposal_by": sender_role,
                 }
-                persist_event_to_db(room_id, prop_event, shared_state_update=shared_update)
-                await registry.broadcast(room_id, prop_event)
+                persist_event_to_db(clean_room_id, prop_event, shared_state_update=shared_update)
+                await registry.broadcast(clean_room_id, prop_event)
 
             # 7. system
             elif event_type == "system":
@@ -353,8 +356,8 @@ async def negotiation_websocket_endpoint(
                     "message": data.get("message", ""),
                     "timestamp": timestamp,
                 }
-                persist_event_to_db(room_id, sys_event)
-                await registry.broadcast(room_id, sys_event)
+                persist_event_to_db(clean_room_id, sys_event)
+                await registry.broadcast(clean_room_id, sys_event)
 
             else:
                 # Default broadcast as generic event
@@ -366,11 +369,11 @@ async def negotiation_websocket_endpoint(
                     "data": data,
                     "timestamp": timestamp,
                 }
-                persist_event_to_db(room_id, gen_event)
-                await registry.broadcast(room_id, gen_event)
+                persist_event_to_db(clean_room_id, gen_event)
+                await registry.broadcast(clean_room_id, gen_event)
 
     except WebSocketDisconnect:
-        await registry.unregister(room_id, pid)
+        await registry.unregister(clean_room_id, pid)
         disc_event = {
             "type": "leave",
             "sender_id": pid,
@@ -379,8 +382,8 @@ async def negotiation_websocket_endpoint(
             "status": "disconnected",
             "timestamp": datetime.utcnow().isoformat(),
         }
-        persist_event_to_db(room_id, disc_event)
-        await registry.broadcast(room_id, disc_event)
+        persist_event_to_db(clean_room_id, disc_event)
+        await registry.broadcast(clean_room_id, disc_event)
     except Exception as ex:
-        logger.error(f"[NegotiationWS {room_id}] Error in socket connection: {ex}")
-        await registry.unregister(room_id, pid)
+        logger.error(f"[NegotiationWS {clean_room_id}] Error in socket connection: {ex}")
+        await registry.unregister(clean_room_id, pid)

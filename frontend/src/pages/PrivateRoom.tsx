@@ -128,7 +128,13 @@ export const PrivateRoom: React.FC = () => {
             setRoomDetails(detail);
             setCreatedRoomId(detail.room_id);
             if (savedToken) setCreatorToken(savedToken);
-            if (detail.title) setRoomTitle(detail.title);
+            if (detail.passcode) {
+              setPasscode(detail.passcode);
+              localStorage.setItem(STORAGE_CREATOR_PASSCODE, detail.passcode);
+            } else {
+              setPasscode('');
+              localStorage.removeItem(STORAGE_CREATOR_PASSCODE);
+            }
 
             if (detail.status === 'closed') {
               setIsRoomClosed(true);
@@ -412,7 +418,13 @@ export const PrivateRoom: React.FC = () => {
       localStorage.setItem(STORAGE_CREATOR_ROOM, res.room_id);
       localStorage.setItem(STORAGE_CREATOR_TOKEN, res.creator_token);
       localStorage.setItem(STORAGE_CREATOR_TITLE, roomTitle);
-      if (passcode.trim()) localStorage.setItem(STORAGE_CREATOR_PASSCODE, passcode.trim());
+      if (res.passcode) {
+        setPasscode(res.passcode);
+        localStorage.setItem(STORAGE_CREATOR_PASSCODE, res.passcode);
+      } else {
+        setPasscode('');
+        localStorage.removeItem(STORAGE_CREATOR_PASSCODE);
+      }
       localStorage.setItem(STORAGE_ACTIVE_TAB, 'creator');
       setActiveTab('creator');
       localStorage.setItem(`room_${res.room_id}_token`, res.creator_token);
@@ -680,9 +692,13 @@ export const PrivateRoom: React.FC = () => {
                   <div className="text-2xl md:text-3xl font-mono font-bold text-primary tracking-wider">
                     {createdRoomId}
                   </div>
-                  {passcode && (
+                  {passcode ? (
                     <div className="text-xs font-mono text-outline">
-                      Passcode: <strong className="text-on-surface">{passcode}</strong>
+                      Passcode: <strong className="text-on-surface font-bold">{passcode}</strong>
+                    </div>
+                  ) : (
+                    <div className="text-xs font-mono text-outline">
+                      Passcode: <span className="text-emerald-400 font-semibold">None (Open Access)</span>
                     </div>
                   )}
                 </div>

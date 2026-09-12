@@ -158,7 +158,7 @@ def serialize_room(room: NegotiationRoomDB, include_tokens: bool = False) -> Dic
         "guest_status": room.guest_status,
         "matter_id": room.matter_id,
         "title": room.title,
-        "passcode": room.passcode,
+        "passcode": room.passcode if (room.passcode and room.passcode.strip()) else None,
         "active_participants_count": room.active_participants_count,
         "created_at": room.created_at.isoformat() if room.created_at else None,
         "closed_at": room.closed_at.isoformat() if room.closed_at else None,
@@ -296,11 +296,12 @@ def get_room_endpoint(
     GET /api/rooms/{room_id}
     Retrieve current room state. Rejects invalid room IDs with 404.
     """
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Negotiation room '{room_id}' not found."
+            detail=f"Negotiation room '{clean_room_id}' not found."
         )
 
     return serialize_room(room)
@@ -321,15 +322,16 @@ async def join_room_endpoint(
     - Creator cannot join as second participant
     - Passcode verification
     """
+    clean_room_id = (room_id or "").strip().upper()
     pid = payload.participant_id or payload.guest_id or f"guest_{secrets.token_hex(4)}"
     pname = payload.participant_name or payload.guest_name or "Counterparty Counsel"
     prole = payload.participant_role or payload.guest_role or "seller"
 
-    room = svc_get_room(db, room_id)
+    room = svc_get_room(db, clean_room_id)
     if not room:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Negotiation room '{room_id}' not found."
+            detail=f"Negotiation room '{clean_room_id}' not found."
         )
 
     if room.status in ("closed", "expired") or room.closed_at is not None:
@@ -341,7 +343,7 @@ async def join_room_endpoint(
     try:
         updated_room = svc_request_join(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             participant_id=pid,
             passcode=payload.passcode,
             participant_name=pname,
@@ -358,10 +360,10 @@ async def join_room_endpoint(
 
     # Broadcast knock over WebSocket to creator
     await ws_manager.broadcast_to_room(
-        room_id,
+        clean_room_id,
         {
             "type": "guest_knock",
-            "room_id": room_id,
+            "room_id": clean_room_id,
             "guest_id": pid,
             "guest_name": pname,
             "guest_role": prole,
@@ -387,9 +389,10 @@ async def admit_participant_endpoint(
     - Maximum 2 participants
     - Invalid or closed rooms rejected
     """
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{room_id}' not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{clean_room_id}' not found.")
 
     if room.status in ("closed", "expired") or room.closed_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot admit participants to a closed or expired room.")
@@ -404,7 +407,7 @@ async def admit_participant_endpoint(
     try:
         updated_room = svc_admit_participant(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             creator_id=room.creator_id,
             participant_id=payload.participant_id,
         )
@@ -413,10 +416,10 @@ async def admit_participant_endpoint(
 
     # Broadcast admission over WebSocket
     await ws_manager.broadcast_to_room(
-        room_id,
+        clean_room_id,
         {
             "type": "guest_admitted",
-            "room_id": room_id,
+            "room_id": clean_room_id,
             "guest_id": updated_room.participant_id,
             "guest_name": updated_room.guest_name,
             "guest_role": updated_room.guest_role,
@@ -442,9 +445,10 @@ async def reject_participant_endpoint(
     - Only creator can reject
     - Invalid or closed rooms rejected
     """
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{room_id}' not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{clean_room_id}' not found.")
 
     if room.status in ("closed", "expired") or room.closed_at is not None:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot reject participants on a closed room.")
@@ -459,7 +463,7 @@ async def reject_participant_endpoint(
     try:
         updated_room = svc_reject_participant(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             creator_id=room.creator_id,
             participant_id=payload.participant_id,
         )
@@ -468,10 +472,10 @@ async def reject_participant_endpoint(
 
     # Broadcast rejection over WebSocket
     await ws_manager.broadcast_to_room(
-        room_id,
+        clean_room_id,
         {
             "type": "guest_rejected",
-            "room_id": room_id,
+            "room_id": clean_room_id,
             "timestamp": datetime.utcnow().isoformat(),
         },
     )
@@ -490,9 +494,10 @@ async def leave_room_endpoint(
     Participant leaves the room.
     Rule: Leaving must not delete historical data.
     """
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{room_id}' not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{clean_room_id}' not found.")
 
     # Resolve participant identifier
     pid = payload.participant_id
@@ -507,33 +512,33 @@ async def leave_room_endpoint(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Participant ID or auth token is required to leave.")
 
     try:
-        updated_room = svc_leave_room(db=db, room_id=room_id, participant_id=pid)
+        updated_room = svc_leave_room(db=db, room_id=clean_room_id, participant_id=pid)
     except ValueError as err:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(err))
 
     # Disconnect participant from both registries
     try:
-        await ws_manager.disconnect(room_id, pid)
+        await ws_manager.disconnect(clean_room_id, pid)
     except Exception:
         pass
     try:
         from app.routers.negotiation_ws import registry
-        await registry.unregister(room_id, pid)
+        await registry.unregister(clean_room_id, pid)
     except Exception:
         pass
 
     # Broadcast departure over WebSocket
     leave_payload = {
         "type": "participant_left",
-        "room_id": room_id,
+        "room_id": clean_room_id,
         "participant_id": pid,
         "active_participants_count": updated_room.active_participants_count,
         "timestamp": datetime.utcnow().isoformat(),
     }
-    await ws_manager.broadcast_to_room(room_id, leave_payload)
+    await ws_manager.broadcast_to_room(clean_room_id, leave_payload)
     try:
         from app.routers.negotiation_ws import registry
-        await registry.broadcast(room_id, {
+        await registry.broadcast(clean_room_id, {
             "type": "leave",
             "sender_id": pid,
             "timestamp": datetime.utcnow().isoformat(),
@@ -558,9 +563,10 @@ async def close_room_endpoint(
     - Only creator can close
     - Invalid rooms rejected
     """
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{room_id}' not found.")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Negotiation room '{clean_room_id}' not found.")
 
     # Enforce only creator can close
     token = payload.creator_token or x_creator_token
@@ -569,13 +575,13 @@ async def close_room_endpoint(
     if not is_authorized:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Unauthorized: Only the creator can close this room.")
 
-    updated_room = svc_close_room(db=db, room_id=room_id, creator_id=room.creator_id)
+    updated_room = svc_close_room(db=db, room_id=clean_room_id, creator_id=room.creator_id)
 
     # Disconnect sockets and broadcast across both registries
-    await ws_manager.close_room_sockets(room_id, reason="Negotiation room closed by creator.")
+    await ws_manager.close_room_sockets(clean_room_id, reason="Negotiation room closed by creator.")
     try:
         from app.routers.negotiation_ws import registry
-        await registry.close_room_and_disconnect(room_id, reason="Negotiation room closed by creator.")
+        await registry.close_room_and_disconnect(clean_room_id, reason="Negotiation room closed by creator.")
     except Exception:
         pass
 
@@ -592,7 +598,8 @@ async def join_request_alias(
     payload: JoinRequest,
     db: Session = Depends(get_db),
 ):
-    res = await join_room_endpoint(room_id=room_id, payload=payload, db=db)
+    clean_room_id = (room_id or "").strip().upper()
+    res = await join_room_endpoint(room_id=clean_room_id, payload=payload, db=db)
     return {
         "room_id": res["room_id"],
         "guest_id": res["participant_id"],
@@ -610,11 +617,12 @@ async def approve_alias(
     creator_token: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
+    clean_room_id = (room_id or "").strip().upper()
     token = x_creator_token or creator_token or payload.get("creator_token")
     decision = payload.get("decision", "approve").lower()
     if decision == "approve":
         admit_req = AdmitRequest(creator_token=token)
-        res = await admit_participant_endpoint(room_id=room_id, payload=admit_req, x_creator_token=token, db=db)
+        res = await admit_participant_endpoint(room_id=clean_room_id, payload=admit_req, x_creator_token=token, db=db)
         return {
             "status": "success",
             "decision": "approved",
@@ -625,7 +633,7 @@ async def approve_alias(
         }
     else:
         rej_req = RejectRequest(creator_token=token)
-        res = await reject_participant_endpoint(room_id=room_id, payload=rej_req, x_creator_token=token, db=db)
+        res = await reject_participant_endpoint(room_id=clean_room_id, payload=rej_req, x_creator_token=token, db=db)
         return {
             "status": "success",
             "decision": "rejected",
@@ -636,7 +644,8 @@ async def approve_alias(
 
 @router.get("/{room_id}/messages")
 def get_room_messages(room_id: str, db: Session = Depends(get_db)):
-    room = svc_get_room(db, room_id)
+    clean_room_id = (room_id or "").strip().upper()
+    room = svc_get_room(db, clean_room_id)
     if not room:
         raise HTTPException(status_code=404, detail="Private room not found.")
     return {
@@ -664,11 +673,12 @@ async def submit_contract_endpoint(
     - Private documents kept private.
     - Does NOT start pipeline until both required party inputs are available.
     """
+    clean_room_id = (room_id or "").strip().upper()
     token = payload.token or x_participant_token or x_creator_token
     try:
         res = svc_submit_room_contract_input(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             participant_id=payload.participant_id,
             token=token,
             party=payload.party,
@@ -678,7 +688,7 @@ async def submit_contract_endpoint(
             auto_start_pipeline=bool(payload.auto_start),
         )
         if res.get("ready_for_pipeline") and payload.auto_start:
-            pipeline_res = await svc_execute_room_pipeline(db=db, room_id=room_id)
+            pipeline_res = await svc_execute_room_pipeline(db=db, room_id=clean_room_id)
             res["pipeline_result"] = pipeline_res
             res["pipeline_started"] = True
         return res
@@ -687,7 +697,7 @@ async def submit_contract_endpoint(
     except PermissionError as pe:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=str(pe))
     except Exception as ex:
-        logger.error(f"[Room {room_id}] Error in submit endpoint: {ex}")
+        logger.error(f"[Room {clean_room_id}] Error in submit endpoint: {ex}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
 
@@ -701,12 +711,13 @@ async def start_pipeline_endpoint(
     Start the 4-agent negotiation deliberation pipeline (Agent 1 + Agent 2 -> Arbiter -> Scrivener).
     Requires both party inputs to have been submitted.
     """
+    clean_room_id = (room_id or "").strip().upper()
     try:
-        return await svc_execute_room_pipeline(db=db, room_id=room_id)
+        return await svc_execute_room_pipeline(db=db, room_id=clean_room_id)
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(ve))
     except Exception as ex:
-        logger.error(f"[Room {room_id}] Error starting pipeline: {ex}")
+        logger.error(f"[Room {clean_room_id}] Error starting pipeline: {ex}")
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=str(ex))
 
 
@@ -716,8 +727,9 @@ def get_pipeline_endpoint(
     db: Session = Depends(get_db),
 ):
     """Retrieve deliberation pipeline progress, submission status, and report details."""
+    clean_room_id = (room_id or "").strip().upper()
     try:
-        return svc_get_room_pipeline_status(db=db, room_id=room_id)
+        return svc_get_room_pipeline_status(db=db, room_id=clean_room_id)
     except ValueError as ve:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(ve))
 
@@ -731,10 +743,11 @@ def review_endpoint(
     """
     General Counsel human review decision: 'approve', 'request_revision', or 'escalate'.
     """
+    clean_room_id = (room_id or "").strip().upper()
     try:
         return svc_review_room_report(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             action=payload.action,
             counsel_name=payload.counsel_name or "General Counsel",
             comments=payload.comments,
@@ -753,10 +766,11 @@ def seal_endpoint(
     Cryptographically seal the approved report into immutable audit ledger.
     Requires prior counsel approval.
     """
+    clean_room_id = (room_id or "").strip().upper()
     try:
         return svc_seal_room_report(
             db=db,
-            room_id=room_id,
+            room_id=clean_room_id,
             counsel_name=payload.counsel_name or "General Counsel",
             comments=payload.comments,
         )
@@ -779,10 +793,11 @@ async def room_websocket_endpoint(
     Authenticates participant token against DB.
     Enforces maximum 2 admitted connections.
     """
+    clean_room_id = (room_id or "").strip().upper()
     from app.db.database import SessionLocal
     db = SessionLocal()
     try:
-        room = svc_get_room(db, room_id)
+        room = svc_get_room(db, clean_room_id)
         if not room:
             await websocket.accept()
             await websocket.send_json({"type": "error", "message": "Room not found."})
@@ -808,13 +823,13 @@ async def room_websocket_endpoint(
         sender_name = room.creator_name if is_creator else (room.guest_name or "Counterparty")
         sender_role = room.creator_role if is_creator else (room.guest_role or "guest")
 
-        connected = await ws_manager.connect(room_id, participant_id, websocket)
+        connected = await ws_manager.connect(clean_room_id, participant_id, websocket)
         if not connected:
             return
 
         await websocket.send_json({
             "type": "welcome",
-            "room_id": room_id,
+            "room_id": clean_room_id,
             "title": room.title,
             "participant_id": participant_id,
             "name": sender_name,
@@ -822,12 +837,12 @@ async def room_websocket_endpoint(
             "is_creator": is_creator,
             "guest_status": room.guest_status,
             "room_status": room.status,
-            "active_participants": list(ws_manager.active_rooms.get(room_id, {}).keys()),
+            "active_participants": list(ws_manager.active_rooms.get(clean_room_id, {}).keys()),
             "timestamp": datetime.utcnow().isoformat(),
         })
 
         await ws_manager.broadcast_to_room(
-            room_id,
+            clean_room_id,
             {
                 "type": "presence",
                 "participant_id": participant_id,
@@ -868,7 +883,7 @@ async def room_websocket_endpoint(
             try:
                 from sqlalchemy.orm.attributes import flag_modified
                 with SessionLocal() as session:
-                    current_room = svc_get_room(session, room_id)
+                    current_room = svc_get_room(session, clean_room_id)
                     if current_room:
                         history = list(current_room.messages or [])
                         history.append(out_msg)
@@ -883,14 +898,14 @@ async def room_websocket_endpoint(
                             flag_modified(current_room, "shared_state")
                         session.commit()
             except Exception as ex:
-                logger.warning(f"[WS Room {room_id}] Failed persisting message: {ex}")
+                logger.warning(f"[WS Room {clean_room_id}] Failed persisting message: {ex}")
 
-            await ws_manager.broadcast_to_room(room_id, out_msg)
+            await ws_manager.broadcast_to_room(clean_room_id, out_msg)
 
     except WebSocketDisconnect:
-        await ws_manager.disconnect(room_id, participant_id)
+        await ws_manager.disconnect(clean_room_id, participant_id)
         await ws_manager.broadcast_to_room(
-            room_id,
+            clean_room_id,
             {
                 "type": "presence",
                 "participant_id": participant_id,
@@ -901,7 +916,7 @@ async def room_websocket_endpoint(
             },
         )
     except Exception as ex:
-        logger.error(f"[WS Room {room_id}] Error in socket connection: {ex}")
-        await ws_manager.disconnect(room_id, participant_id)
+        logger.error(f"[WS Room {clean_room_id}] Error in socket connection: {ex}")
+        await ws_manager.disconnect(clean_room_id, participant_id)
     finally:
         db.close()

@@ -719,7 +719,7 @@ export interface CreateRoomPayload {
 
 export interface CreateRoomResult {
   room_id: string;
-  passcode: string;
+  passcode?: string | null;
   creator_id: string;
   creator_token: string;
   status: string;
@@ -741,6 +741,7 @@ export interface RoomPublicDetail {
   guest_status: 'none' | 'pending_approval' | 'admitted' | 'rejected' | 'left' | string;
   participant_id?: string;
   participant?: { id: string; name: string; role: string; status: string };
+  passcode?: string | null;
   active_participants_count: number;
   created_at: string;
   closed_at?: string;
@@ -749,7 +750,7 @@ export interface RoomPublicDetail {
 export interface JoinRoomPayload {
   guest_name: string;
   guest_role: 'buyer' | 'seller';
-  passcode: string;
+  passcode?: string;
 }
 
 export interface JoinRoomResult {
@@ -768,21 +769,23 @@ export async function createPrivateRoom(payload: CreateRoomPayload): Promise<Cre
 }
 
 export async function getPrivateRoom(roomId: string): Promise<RoomPublicDetail> {
-  return request<RoomPublicDetail>(`/api/rooms/${encodeURIComponent(roomId)}`);
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<RoomPublicDetail>(`/api/rooms/${encodeURIComponent(cleanId)}`);
 }
 
 export async function requestJoinPrivateRoom(
   roomId: string,
   payload: JoinRoomPayload
 ): Promise<JoinRoomResult> {
-  return request<JoinRoomResult>(`/api/rooms/${encodeURIComponent(roomId)}/join`, {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<JoinRoomResult>(`/api/rooms/${encodeURIComponent(cleanId)}/join`, {
     method: 'POST',
     body: JSON.stringify({
       guest_name: payload.guest_name,
       participant_name: payload.guest_name,
       guest_role: payload.guest_role,
       participant_role: payload.guest_role,
-      passcode: payload.passcode,
+      passcode: payload.passcode?.trim() || undefined,
     }),
   });
 }
@@ -791,14 +794,15 @@ export async function joinPrivateRoom(
   roomId: string,
   payload: { name?: string; role?: string; passcode?: string }
 ): Promise<any> {
-  return request<any>(`/api/rooms/${encodeURIComponent(roomId)}/join`, {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/join`, {
     method: 'POST',
     body: JSON.stringify({
       participant_name: payload.name,
       guest_name: payload.name,
       participant_role: payload.role || 'seller',
       guest_role: payload.role || 'seller',
-      passcode: payload.passcode,
+      passcode: payload.passcode?.trim() || undefined,
     }),
   });
 }
@@ -808,7 +812,8 @@ export async function admitParticipant(
   participantId?: string,
   creatorToken?: string
 ): Promise<any> {
-  return request<any>(`/api/rooms/${encodeURIComponent(roomId)}/admit`, {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/admit`, {
     method: 'POST',
     headers: creatorToken ? { 'X-Creator-Token': creatorToken } : {},
     body: JSON.stringify({
@@ -823,7 +828,8 @@ export async function rejectParticipant(
   participantId?: string,
   creatorToken?: string
 ): Promise<any> {
-  return request<any>(`/api/rooms/${encodeURIComponent(roomId)}/reject`, {
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<any>(`/api/rooms/${encodeURIComponent(cleanId)}/reject`, {
     method: 'POST',
     headers: creatorToken ? { 'X-Creator-Token': creatorToken } : {},
     body: JSON.stringify({
@@ -838,10 +844,11 @@ export async function approveRoomGuest(
   decision: 'approve' | 'reject',
   creatorToken: string
 ): Promise<{ status: string; decision: string; guest_status: string }> {
+  const cleanId = (roomId || '').trim().toUpperCase();
   if (decision === 'approve') {
-    return admitParticipant(roomId, undefined, creatorToken);
+    return admitParticipant(cleanId, undefined, creatorToken);
   } else {
-    return rejectParticipant(roomId, undefined, creatorToken);
+    return rejectParticipant(cleanId, undefined, creatorToken);
   }
 }
 
@@ -849,8 +856,9 @@ export async function leavePrivateRoom(
   roomId: string,
   token: string
 ): Promise<{ status: string; message: string; active_participants_count: number }> {
+  const cleanId = (roomId || '').trim().toUpperCase();
   return request<{ status: string; message: string; active_participants_count: number }>(
-    `/api/rooms/${encodeURIComponent(roomId)}/leave`,
+    `/api/rooms/${encodeURIComponent(cleanId)}/leave`,
     {
       method: 'POST',
       body: JSON.stringify({ token }),
@@ -862,8 +870,9 @@ export async function closePrivateRoom(
   roomId: string,
   creatorToken: string
 ): Promise<{ status: string; room_id: string; room_status: string }> {
+  const cleanId = (roomId || '').trim().toUpperCase();
   return request<{ status: string; room_id: string; room_status: string }>(
-    `/api/rooms/${encodeURIComponent(roomId)}/close`,
+    `/api/rooms/${encodeURIComponent(cleanId)}/close`,
     {
       method: 'POST',
       headers: creatorToken ? { 'X-Creator-Token': creatorToken } : {},
@@ -873,13 +882,15 @@ export async function closePrivateRoom(
 }
 
 export async function getRoomMessages(roomId: string): Promise<{ room_id: string; messages: any[] }> {
-  return request<{ room_id: string; messages: any[] }>(`/api/rooms/${encodeURIComponent(roomId)}/messages`);
+  const cleanId = (roomId || '').trim().toUpperCase();
+  return request<{ room_id: string; messages: any[] }>(`/api/rooms/${encodeURIComponent(cleanId)}/messages`);
 }
 
 export function getRoomWebSocketUrl(roomId: string, token: string): string {
+  const cleanId = (roomId || '').trim().toUpperCase();
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   // Use current host which proxies /ws via Vite dev server or direct backend in production
-  return `${protocol}//${window.location.host}/ws/rooms/${encodeURIComponent(roomId)}?token=${encodeURIComponent(token)}`;
+  return `${protocol}//${window.location.host}/ws/rooms/${encodeURIComponent(cleanId)}?token=${encodeURIComponent(token)}`;
 }
 
 export function getNegotiationWebSocketUrl(
@@ -887,12 +898,13 @@ export function getNegotiationWebSocketUrl(
   token?: string,
   participantId?: string
 ): string {
+  const cleanId = (roomId || '').trim().toUpperCase();
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
   const params = new URLSearchParams();
   if (token) params.set('token', token);
   if (participantId) params.set('participant_id', participantId);
   const q = params.toString() ? `?${params.toString()}` : '';
-  return `${protocol}//${window.location.host}/ws/negotiation/${encodeURIComponent(roomId)}${q}`;
+  return `${protocol}//${window.location.host}/ws/negotiation/${encodeURIComponent(cleanId)}${q}`;
 }
 
 // Default export consolidating all endpoints

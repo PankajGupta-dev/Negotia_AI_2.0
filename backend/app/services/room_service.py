@@ -16,6 +16,7 @@ from datetime import datetime
 import logging
 import secrets
 from typing import Any, Dict, List, Optional
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.db.models import NegotiationRoomDB
@@ -31,17 +32,17 @@ def generate_collision_safe_room_id(db: Session, prefix: str = "NEG", max_attemp
     alphabet = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
     for _ in range(max_attempts):
         suffix = "".join(secrets.choice(alphabet) for _ in range(6))
-        candidate_id = f"{prefix}-{suffix}"
-        # Check against existing rooms in DB
+        candidate_id = f"{prefix}-{suffix}".upper()
+        # Check against existing rooms in DB (case-insensitive)
         existing = db.query(NegotiationRoomDB).filter(
-            (NegotiationRoomDB.room_id == candidate_id) | (NegotiationRoomDB.id == candidate_id)
+            (func.upper(NegotiationRoomDB.room_id) == candidate_id) | (func.upper(NegotiationRoomDB.id) == candidate_id)
         ).first()
         if not existing:
             return candidate_id
 
     # Fallback to 8 chars if high collision density
     suffix = "".join(secrets.choice(alphabet) for _ in range(8))
-    return f"{prefix}-{suffix}"
+    return f"{prefix}-{suffix}".upper()
 
 
 def create_room(
@@ -56,9 +57,10 @@ def create_room(
     """
     Create a new private negotiation room.
     Creator is automatically assigned; status begins in 'waiting'.
+    Passcode is optional: if empty, room is passcode-free for counterparty.
     """
     room_id = generate_collision_safe_room_id(db, prefix="NEG")
-    clean_passcode = passcode.strip() if passcode and passcode.strip() else f"SEC-{secrets.randbelow(9000) + 1000}"
+    clean_passcode = passcode.strip() if passcode and passcode.strip() else ""
     clean_creator_name = creator_name.strip() if creator_name and creator_name.strip() else f"Counsel ({creator_role.capitalize()})"
     creator_token = f"ctok_{secrets.token_hex(12)}"
     now = datetime.utcnow()
@@ -91,14 +93,17 @@ def create_room(
     db.commit()
     db.refresh(room)
 
-    logger.info(f"[RoomService] Created room '{room_id}' for creator '{creator_id}'.")
+    logger.info(f"[RoomService] Created room '{room_id}' for creator '{creator_id}' (passcode_protected={clean_passcode is not None}).")
     return room
 
 
 def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
-    """Retrieve negotiation room by room_id or primary key."""
+    """Retrieve negotiation room by room_id or primary key (case-insensitive & trimmed)."""
+    if not room_id:
+        return None
+    clean_id = room_id.strip().upper()
     return db.query(NegotiationRoomDB).filter(
-        (NegotiationRoomDB.room_id == room_id) | (NegotiationRoomDB.id == room_id)
+        (func.upper(NegotiationRoomDB.room_id) == clean_id) | (func.upper(NegotiationRoomDB.id) == clean_id)
     ).first()
 
 
@@ -113,15 +118,16 @@ def request_join(
     """
     Second participant requests to join the private room.
     Enforces:
-    - Room must exist.
+    - Room must exist (case-insensitive resolution).
     - Cannot join a closed or expired room.
     - Creator cannot join as the second participant.
     - Only one additional participant is allowed (strict 2-party limit).
-    - Passcode verification if room has a passcode.
+    - Passcode verification if room was configured with a passcode.
     """
     room = get_room(db, room_id)
     if not room:
-        raise ValueError(f"Negotiation room '{room_id}' not found.")
+        clean_name = (room_id or "").strip().upper()
+        raise ValueError(f"Negotiation room '{clean_name}' not found.")
 
     if room.status in ("closed", "expired") or room.closed_at is not None:
         raise ValueError("This negotiation room is permanently closed or expired.")
@@ -129,8 +135,9 @@ def request_join(
     if participant_id == room.creator_id:
         raise ValueError("Creator cannot join as the second participant.")
 
-    if passcode is not None and room.passcode:
-        if passcode.strip() != room.passcode.strip():
+    # Passcode verification: only enforced if room has a passcode configured
+    if room.passcode and room.passcode.strip():
+        if not passcode or passcode.strip() != room.passcode.strip():
             raise ValueError("Invalid room passcode.")
 
     # Strict rule: Only one additional participant is allowed
