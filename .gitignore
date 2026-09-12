@@ -52,3 +52,4 @@ env/
 uploads/
 backend/uploads/
 
+backend/negotiadb.sqlite*
