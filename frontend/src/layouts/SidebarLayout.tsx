@@ -21,7 +21,15 @@ export const SidebarLayout: React.FC = () => {
   const { user, role, switchRole, logout, isAuthenticated } = useAuth();
   const { matterId } = useIntake();
 
+  // Active private room check across tabs and sessions
+  const activePrivateRoomId =
+    localStorage.getItem('negotia_creator_room_id') ||
+    localStorage.getItem('negotia_participant_room_id');
+
   const activeMatterId = matterId || '2025-INT-809';
+  const targetNegotiationPath = activePrivateRoomId
+    ? `/negotiations/${activePrivateRoomId}`
+    : `/negotiations/${activeMatterId}`;
 
   const NAV_ITEMS: NavItem[] = [
     { name: 'Operations Command', path: '/dashboard', icon: 'dashboard' },
@@ -35,8 +43,17 @@ export const SidebarLayout: React.FC = () => {
     },
     {
       name: 'Negotiation Room',
-      path: `/negotiations/${activeMatterId}`,
+      path: targetNegotiationPath,
       icon: 'handshake',
+      badge: activePrivateRoomId ? 'ACTIVE' : undefined,
+      badgeTone: activePrivateRoomId ? 'amber' : undefined,
+    },
+    {
+      name: 'Private Room (2-Party)',
+      path: '/private-room',
+      icon: 'lock',
+      badge: activePrivateRoomId ? 'ACTIVE' : '2P',
+      badgeTone: activePrivateRoomId ? 'forest' : 'forest',
     },
     { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
     { name: 'Executive Report', path: `/reports/${activeMatterId}`, icon: 'description' },
@@ -69,6 +86,7 @@ export const SidebarLayout: React.FC = () => {
   const isWorkspace = location.pathname.startsWith('/negotiations');
   const isReport = location.pathname.startsWith('/reports');
   const isGovernance = location.pathname.startsWith('/governance') || location.pathname.startsWith('/team');
+  const isPrivateRoom = location.pathname.startsWith('/private-room');
 
   // Current user display data
   const displayName = user?.name ?? 'Guest User';
@@ -141,7 +159,8 @@ export const SidebarLayout: React.FC = () => {
                 location.pathname === item.path ||
                 (item.path.startsWith('/negotiations') && isWorkspace) ||
                 (item.path.startsWith('/reports') && isReport) ||
-                (item.path.startsWith('/governance') && isGovernance);
+                (item.path.startsWith('/governance') && isGovernance) ||
+                (item.path.startsWith('/private-room') && isPrivateRoom);
 
               return (
                 <NavLink

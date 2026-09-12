@@ -12,6 +12,7 @@ import { Sandbox } from './pages/Sandbox';
 import { Reports } from './pages/Reports';
 import { Governance } from './pages/Governance';
 import { AgentPipeline } from './pages/AgentPipeline';
+import { PrivateRoom } from './pages/PrivateRoom';
 
 export const App: React.FC = () => {
   return (
@@ -29,6 +30,8 @@ export const App: React.FC = () => {
               <Route path="/intake" element={<Intake />} />
               <Route path="/pipeline/:id" element={<AgentPipeline />} />
               <Route path="/negotiations/:id" element={<NegotiationWorkspace />} />
+              <Route path="/private-room" element={<PrivateRoom />} />
+              <Route path="/private-room/:roomId" element={<PrivateRoom />} />
               <Route path="/sandbox" element={<Sandbox />} />
               <Route path="/reports/:id" element={<Reports />} />
               <Route path="/governance" element={<Governance />} />

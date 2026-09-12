@@ -1,20 +1,42 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { RiskChip } from '../components/RiskChip';
 import { Button } from '../components/Button';
 import { MOCK_CLAUSES, ContractClause } from '../data/mock';
 import { useIntake } from '../context/IntakeContext';
+import { useAuth } from '../context/AuthContext';
 import {
   getMatterClauses,
   conformClause,
   getMatter,
   getMatterDeliberations,
   subscribeToPipelineStream,
+  getPrivateRoom,
+  closePrivateRoom,
+  getNegotiationWebSocketUrl,
   ClauseDetail,
   MatterDetail,
   DeliberationEvent,
+  RoomPublicDetail,
 } from '../services/api';
+
+interface BilateralRoomEvent {
+  type: 'join' | 'leave' | 'message' | 'clause_submitted' | 'proposal' | 'room_closed' | 'system' | string;
+  sender_id?: string;
+  sender_name?: string;
+  sender_role?: string;
+  text?: string;
+  clause_id?: string;
+  proposal?: string;
+  terms?: string;
+  active_participants_count?: number;
+  status?: string;
+  reason?: string;
+  error?: string;
+  message?: string;
+  timestamp: string;
+}
 
 type WorkspaceClause = Omit<ContractClause, 'status'> & Partial<ClauseDetail> & {
   status: 'agreed' | 'pending' | 'flagged' | 'conceded' | 'conformed' | string;
@@ -72,6 +94,7 @@ export const NegotiationWorkspace: React.FC = () => {
   const navigate = useNavigate();
   const { docAFile, docBFile, matterTitle, counterparty, matterId } = useIntake();
 
+  const { user } = useAuth();
   const initialClauses = MOCK_CLAUSES.map(normalizeClause);
   const [clauses, setClauses] = useState<WorkspaceClause[]>(initialClauses);
   const [selectedClauseId, setSelectedClauseId] = useState<string>(initialClauses[0]?.id || 'clause-11-2');
@@ -80,6 +103,21 @@ export const NegotiationWorkspace: React.FC = () => {
   const [matterDetail, setMatterDetail] = useState<MatterDetail | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  // Private 2-Party Room State
+  const [roomDetail, setRoomDetail] = useState<RoomPublicDetail | null>(null);
+  const [isRoomClosed, setIsRoomClosed] = useState<boolean>(false);
+
+  // Bilateral WebSocket State (/ws/negotiation/{room_id})
+  const [wsConnected, setWsConnected] = useState<boolean>(false);
+  const [wsReconnecting, setWsReconnecting] = useState<boolean>(false);
+  const [bilateralEvents, setBilateralEvents] = useState<BilateralRoomEvent[]>([]);
+  const [activePartyCount, setActivePartyCount] = useState<number>(1);
+  const [presenceNotice, setPresenceNotice] = useState<{
+    text: string;
+    type: 'join' | 'leave' | 'closed' | 'info';
+  } | null>(null);
+  const [chatInput, setChatInput] = useState<string>('');
+
   // Real-time Deliberation Console State
   const [deliberationEvents, setDeliberationEvents] = useState<DeliberationEvent[]>([]);
   const [liveStatus, setLiveStatus] = useState<string>('Analysis complete');
@@ -87,11 +125,293 @@ export const NegotiationWorkspace: React.FC = () => {
 
   const targetMatterId = id || matterId || '2025-INT-809';
 
+  const [consoleTab, setConsoleTab] = useState<'ai_agents' | 'bilateral_room'>(
+    targetMatterId.startsWith('NEG-') ? 'bilateral_room' : 'ai_agents'
+  );
+
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<any>(null);
+  const reconnectAttemptsRef = useRef<number>(0);
+  const isUnmountedRef = useRef<boolean>(false);
+  const isClosedRef = useRef<boolean>(false);
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  // Auto-scroll bilateral messages
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [bilateralEvents]);
+
+  const isCreatorOfRoom =
+    sessionStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
+    localStorage.getItem(`room_${targetMatterId}_role`) === 'creator' ||
+    localStorage.getItem('negotia_creator_room_id') === targetMatterId ||
+    (roomDetail?.creator_id && user && (roomDetail.creator_id === user.uid || roomDetail.creator_name === user.name));
+
+  const handleStopRoom = async () => {
+    if (!targetMatterId) return;
+    const token =
+      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem('negotia_creator_room_token') ||
+      '';
+    if (window.confirm('Are you sure you want to stop and close this private room?')) {
+      try {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(
+            JSON.stringify({
+              type: 'room_closed',
+              reason: 'Negotiation room closed by creator.',
+            })
+          );
+        }
+        await closePrivateRoom(targetMatterId, token);
+        isClosedRef.current = true;
+        setIsRoomClosed(true);
+        setWsConnected(false);
+        if (roomDetail) {
+          setRoomDetail({ ...roomDetail, status: 'closed' });
+        }
+        localStorage.removeItem('negotia_creator_room_id');
+        localStorage.removeItem('negotia_creator_room_token');
+        localStorage.removeItem('negotia_creator_room_title');
+        localStorage.removeItem('negotia_creator_room_passcode');
+        localStorage.removeItem(`room_${targetMatterId}_role`);
+        localStorage.removeItem(`room_${targetMatterId}_token`);
+        sessionStorage.removeItem(`room_${targetMatterId}_role`);
+        sessionStorage.removeItem(`room_${targetMatterId}_token`);
+      } catch (err: any) {
+        alert(`Failed to close room: ${err.message || err}`);
+      }
+    }
+  };
+
+  const handleLeaveRoom = async () => {
+    if (!targetMatterId) return;
+    if (window.confirm('Are you sure you want to leave this private negotiation room?')) {
+      try {
+        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+          wsRef.current.send(JSON.stringify({ type: 'leave' }));
+        }
+        localStorage.removeItem('negotia_participant_room_id');
+        localStorage.removeItem('negotia_participant_room_token');
+        localStorage.removeItem(`room_${targetMatterId}_role`);
+        localStorage.removeItem(`room_${targetMatterId}_token`);
+        sessionStorage.removeItem(`room_${targetMatterId}_role`);
+        sessionStorage.removeItem(`room_${targetMatterId}_token`);
+        navigate('/private-room');
+      } catch (err: any) {
+        alert(`Failed to leave room: ${err.message || err}`);
+      }
+    }
+  };
+
+  // Safe WebSocket connection with exponential backoff reconnection
+  const connectNegotiationWs = (roomId: string) => {
+    if (isUnmountedRef.current || isClosedRef.current) return;
+
+    if (wsRef.current) {
+      try {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.close();
+      } catch {}
+      wsRef.current = null;
+    }
+
+    const token =
+      sessionStorage.getItem(`room_${roomId}_token`) ||
+      localStorage.getItem(`room_${roomId}_token`) ||
+      (localStorage.getItem('negotia_creator_room_id') === roomId ? localStorage.getItem('negotia_creator_room_token') : '') ||
+      (localStorage.getItem('negotia_participant_room_id') === roomId ? localStorage.getItem('negotia_participant_room_token') : '') ||
+      '';
+    const wsUrl = getNegotiationWebSocketUrl(roomId, token);
+
+    try {
+      const ws = new WebSocket(wsUrl);
+
+      ws.onopen = () => {
+        if (isUnmountedRef.current) {
+          ws.close();
+          return;
+        }
+        setWsConnected(true);
+        setWsReconnecting(false);
+        reconnectAttemptsRef.current = 0;
+      };
+
+      ws.onmessage = (evt) => {
+        if (isUnmountedRef.current) return;
+        try {
+          const data = JSON.parse(evt.data);
+          const now = data.timestamp || new Date().toISOString();
+
+          if (data.type === 'join') {
+            setBilateralEvents((prev) => [...prev, { ...data, timestamp: now }]);
+            if (typeof data.active_participants_count === 'number') {
+              setActivePartyCount(data.active_participants_count);
+            }
+            if (data.sender_name) {
+              setPresenceNotice({
+                text: `${data.sender_name} (${data.sender_role || 'counsel'}) joined the room`,
+                type: 'join',
+              });
+            }
+          } else if (data.type === 'leave') {
+            setBilateralEvents((prev) => [...prev, { ...data, timestamp: now }]);
+            setActivePartyCount((prev) => Math.max(1, prev - 1));
+            if (data.sender_name) {
+              setPresenceNotice({
+                text: `${data.sender_name} (${data.sender_role || 'counsel'}) left the room`,
+                type: 'leave',
+              });
+            }
+          } else if (data.type === 'room_closed') {
+            isClosedRef.current = true;
+            setIsRoomClosed(true);
+            setWsConnected(false);
+            setBilateralEvents((prev) => [
+              ...prev,
+              {
+                type: 'room_closed',
+                text: data.reason || 'Negotiation room closed by creator.',
+                timestamp: now,
+              },
+            ]);
+            setPresenceNotice({
+              text: data.reason || 'Negotiation room closed by creator.',
+              type: 'closed',
+            });
+          } else if (
+            data.type === 'message' ||
+            data.type === 'clause_submitted' ||
+            data.type === 'proposal' ||
+            data.type === 'system'
+          ) {
+            setBilateralEvents((prev) => [...prev, { ...data, timestamp: now }]);
+          }
+        } catch (err) {
+          console.error('Error parsing negotiation WebSocket message', err);
+        }
+      };
+
+      ws.onclose = (event) => {
+        setWsConnected(false);
+        if (!isUnmountedRef.current && !isClosedRef.current && event.code !== 1000) {
+          if (reconnectAttemptsRef.current < 5) {
+            reconnectAttemptsRef.current += 1;
+            setWsReconnecting(true);
+            const delay = Math.min(1000 * Math.pow(1.5, reconnectAttemptsRef.current), 8000);
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = setTimeout(() => {
+              connectNegotiationWs(roomId);
+            }, delay);
+          }
+        }
+      };
+
+      ws.onerror = () => {
+        // Handled via onclose
+      };
+
+      wsRef.current = ws;
+    } catch (err) {
+      console.warn('Failed establishing negotiation WebSocket connection:', err);
+    }
+  };
+
+  // Connect on room entry and cleanly disconnect on page exit
+  useEffect(() => {
+    isUnmountedRef.current = false;
+    isClosedRef.current = false;
+
+    if (targetMatterId.startsWith('NEG-')) {
+      connectNegotiationWs(targetMatterId);
+    }
+
+    return () => {
+      isUnmountedRef.current = true;
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      if (wsRef.current) {
+        try {
+          // Do NOT send { type: 'leave' } on unmount or tab switch!
+          // Page exit or navigation is not an abandonment of the negotiation.
+          wsRef.current.close(1000, 'Page Exit');
+        } catch {}
+        wsRef.current = null;
+      }
+    };
+  }, [targetMatterId]);
+
+  // Tab switching / focus sync: reconnect WebSocket if disconnected while in another tab
+  useEffect(() => {
+    const handleWorkspaceFocus = () => {
+      if (
+        targetMatterId.startsWith('NEG-') &&
+        !isClosedRef.current &&
+        (!wsRef.current || wsRef.current.readyState === WebSocket.CLOSED || wsRef.current.readyState === WebSocket.CLOSING)
+      ) {
+        connectNegotiationWs(targetMatterId);
+      }
+    };
+
+    window.addEventListener('focus', handleWorkspaceFocus);
+    const handleVis = () => {
+      if (document.visibilityState === 'visible') handleWorkspaceFocus();
+    };
+    document.addEventListener('visibilitychange', handleVis);
+    return () => {
+      window.removeEventListener('focus', handleWorkspaceFocus);
+      document.removeEventListener('visibilitychange', handleVis);
+    };
+  }, [targetMatterId]);
+
+  // Send shared negotiation message
+  const handleSendBilateralMessage = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!chatInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: 'message',
+        text: chatInput.trim(),
+      })
+    );
+    setChatInput('');
+  };
+
+  // Send currently selected clause proposal over WebSocket
+  const handleBroadcastClauseProposal = () => {
+    if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN || !selectedClause) return;
+
+    wsRef.current.send(
+      JSON.stringify({
+        type: 'proposal',
+        clause_id: selectedClause.clauseId || selectedClause.id,
+        proposal: selectedClause.conformedProposal,
+        terms: `Compromise proposed on ${selectedClause.section} (${selectedClause.title})`,
+        rationale: selectedClause.rationale,
+      })
+    );
+  };
+
   useEffect(() => {
     let isMounted = true;
 
     async function loadWorkspaceData() {
       try {
+        if (targetMatterId.startsWith('NEG-')) {
+          getPrivateRoom(targetMatterId)
+            .then((r) => {
+              if (isMounted && r) {
+                setRoomDetail(r);
+                if (r.status === 'closed') {
+                  setIsRoomClosed(true);
+                }
+              }
+            })
+            .catch(() => {});
+        }
+
         const [clausesResult, matterResult, delibResult] = await Promise.allSettled([
           getMatterClauses(targetMatterId),
           getMatter(targetMatterId),
@@ -237,6 +557,109 @@ export const NegotiationWorkspace: React.FC = () => {
 
   return (
     <div className="w-full flex flex-col min-h-screen bg-background text-on-surface select-none">
+      {/* 0. PRIVATE ROOM 2-PARTY STATUS STRIP (ONLY WHEN IN A PRIVATE ROOM) */}
+      {(targetMatterId.startsWith('NEG-') || roomDetail) && (
+        <section className="w-full bg-surface-container border-b border-primary/40 px-space-base md:px-space-lg py-2 flex flex-col gap-2 shadow-xs">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-3 flex-wrap">
+              <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded bg-primary-container/20 text-primary font-mono text-xs font-bold border border-primary/40">
+                <span className="material-symbols-outlined text-sm">lock</span>
+                Private Room: {targetMatterId}
+              </span>
+              <span className={`text-[11px] font-mono uppercase font-semibold px-2 py-0.5 rounded border ${
+                isRoomClosed || roomDetail?.status === 'closed'
+                  ? 'bg-error-container/20 text-error border-error/40'
+                  : 'bg-secondary/10 text-secondary border-secondary/30'
+              }`}>
+                {isRoomClosed || roomDetail?.status === 'closed' ? 'Room Closed' : 'Admitted • 2-Party Active'}
+              </span>
+              <span className="flex items-center gap-1.5 font-mono text-xs text-outline">
+                <span className={`w-2 h-2 rounded-full ${
+                  isRoomClosed
+                    ? 'bg-error'
+                    : wsConnected
+                    ? 'bg-secondary animate-pulse'
+                    : wsReconnecting
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-outline-variant'
+                }`} />
+                <span>
+                  {isRoomClosed
+                    ? 'Disconnected (Room Closed)'
+                    : wsConnected
+                    ? 'Live WS Connected (/ws/negotiation)'
+                    : wsReconnecting
+                    ? 'Reconnecting safely...'
+                    : 'Connecting...'}
+                </span>
+              </span>
+              <span className="text-xs font-mono text-outline">
+                Active: <strong className="text-on-surface">{activePartyCount} / 2</strong>
+              </span>
+              <span className="text-xs text-outline font-body-sm">
+                {isCreatorOfRoom ? '(Room Creator)' : '(Admitted Participant)'}
+              </span>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                icon="arrow_back"
+                onClick={() => navigate('/private-room')}
+              >
+                Room Hub
+              </Button>
+              {isCreatorOfRoom && !isRoomClosed && (
+                <Button
+                  variant="danger"
+                  size="sm"
+                  icon="cancel"
+                  onClick={handleStopRoom}
+                >
+                  Stop Room
+                </Button>
+              )}
+              {!isCreatorOfRoom && !isRoomClosed && (
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="logout"
+                  onClick={handleLeaveRoom}
+                >
+                  Leave Room
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Participant Joined / Left / Room Closed Notice Banner */}
+          {presenceNotice && (
+            <div className={`px-3 py-1.5 rounded text-xs flex items-center justify-between gap-2 shadow-xs ${
+              presenceNotice.type === 'join'
+                ? 'bg-secondary-container/20 text-secondary border border-secondary/30'
+                : presenceNotice.type === 'leave'
+                ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                : 'bg-error-container/20 text-error border border-error/40'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="material-symbols-outlined text-sm">
+                  {presenceNotice.type === 'join' ? 'person_add' : presenceNotice.type === 'leave' ? 'person_remove' : 'lock'}
+                </span>
+                <span className="font-mono font-medium">{presenceNotice.text}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setPresenceNotice(null)}
+                className="text-outline hover:text-on-surface text-xs px-1"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </section>
+      )}
+
       {/* 1. TOP DOCKET STRIP */}
       <section className="w-full bg-surface-container-lowest border-b border-outline-variant/30 px-space-base md:px-space-lg py-2.5 flex flex-wrap items-center justify-between gap-space-sm shadow-sm">
         <div className="flex items-center gap-space-md flex-wrap min-w-0">
@@ -718,48 +1141,405 @@ export const NegotiationWorkspace: React.FC = () => {
           </article>
         </div>
 
-        {/* PANEL 3: REAL-TIME AGENT DELIBERATION CONSOLE */}
+        {/* PANEL 3: REAL-TIME AGENT DELIBERATION CONSOLE / 2-PARTY BILATERAL STREAM */}
         <aside className="col-span-12 lg:col-span-3 bg-surface-container-lowest border-l border-outline-variant/30 p-space-base flex flex-col justify-between space-y-space-md overflow-hidden select-none">
           <div className="flex flex-col flex-1 min-h-0 space-y-space-sm">
-            {/* Header Strip */}
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20 shrink-0">
-              <div className="flex items-center gap-2">
-                <WaxSealLogo size={22} pulse={liveStatus !== 'PENDING HUMAN REVIEW'} />
-                <span className="font-label-lg text-sm font-bold text-on-surface">
-                  Autonomous Deliberation
+            {/* Header Strip with Switcher if in Private Room */}
+            {(targetMatterId.startsWith('NEG-') || roomDetail) ? (
+              <div className="flex bg-surface-container-low rounded-lg p-0.5 border border-outline-variant/30 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setConsoleTab('bilateral_room')}
+                  className={`flex-1 py-1.5 px-2 rounded text-xs font-semibold font-mono flex items-center justify-center gap-1.5 transition-all ${
+                    consoleTab === 'bilateral_room'
+                      ? 'bg-primary text-on-primary shadow-xs'
+                      : 'text-outline hover:text-on-surface'
+                  }`}
+                >
+                  <span className={`w-1.5 h-1.5 rounded-full ${wsConnected ? 'bg-emerald-400' : 'bg-outline-variant'}`} />
+                  <span>2-Party Room</span>
+                  {bilateralEvents.length > 0 && (
+                    <span className="text-[10px] px-1 rounded bg-black/20 font-bold">
+                      {bilateralEvents.length}
+                    </span>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setConsoleTab('ai_agents')}
+                  className={`flex-1 py-1.5 px-2 rounded text-xs font-semibold font-mono flex items-center justify-center gap-1.5 transition-all ${
+                    consoleTab === 'ai_agents'
+                      ? 'bg-primary text-on-primary shadow-xs'
+                      : 'text-outline hover:text-on-surface'
+                  }`}
+                >
+                  <WaxSealLogo size={14} />
+                  <span>AI Pipeline</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20 shrink-0">
+                <div className="flex items-center gap-2">
+                  <WaxSealLogo size={22} pulse={liveStatus !== 'PENDING HUMAN REVIEW'} />
+                  <span className="font-label-lg text-sm font-bold text-on-surface">
+                    Autonomous Deliberation
+                  </span>
+                </div>
+                <span className={`font-mono text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${
+                  liveStatus === 'PENDING HUMAN REVIEW'
+                    ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30'
+                    : 'bg-secondary-container/20 text-secondary border border-secondary/30 animate-pulse'
+                }`}>
+                  {liveStatus === 'PENDING HUMAN REVIEW' ? 'PENDING REVIEW' : 'LIVE'}
                 </span>
               </div>
-              <span className={`font-mono text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${
-                liveStatus === 'PENDING HUMAN REVIEW'
-                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30'
-                  : 'bg-secondary-container/20 text-secondary border border-secondary/30 animate-pulse'
-              }`}>
-                {liveStatus === 'PENDING HUMAN REVIEW' ? 'PENDING REVIEW' : 'LIVE'}
-              </span>
-            </div>
+            )}
 
-            {/* Live Progress Bar Indicator */}
-            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${
-                liveStatus === 'PENDING HUMAN REVIEW' ? 'bg-amber-500' : 'bg-primary animate-pulse'
-              }`} />
-              <span className="truncate font-semibold text-primary">{liveStatus}</span>
-            </div>
-
-            {/* Deliberation Event Feed */}
-            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
-              {deliberationEvents.length === 0 ? (
-                <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-2">
-                  <span className="material-symbols-outlined text-outline text-2xl animate-spin">
-                    sync
+            {/* TAB 1: 2-PARTY BILATERAL WEBSOCKET STREAM */}
+            {consoleTab === 'bilateral_room' ? (
+              <div className="flex flex-col flex-1 min-h-0 space-y-2">
+                {/* WS Connection Status Strip */}
+                <div className="flex items-center justify-between px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className={`w-2 h-2 rounded-full ${
+                      isRoomClosed
+                        ? 'bg-error'
+                        : wsConnected
+                        ? 'bg-emerald-400 animate-pulse'
+                        : wsReconnecting
+                        ? 'bg-amber-400 animate-pulse'
+                        : 'bg-outline-variant'
+                    }`} />
+                    <span className="text-[11px] font-semibold">
+                      {isRoomClosed
+                        ? 'Room Closed'
+                        : wsConnected
+                        ? 'Connected (/ws/negotiation)'
+                        : wsReconnecting
+                        ? 'Reconnecting...'
+                        : 'Connecting...'}
+                    </span>
+                  </div>
+                  <span className="text-[10px] text-outline">
+                    Capacity: {activePartyCount} / 2
                   </span>
-                  <p className="font-mono text-xs text-on-surface-variant font-semibold">
-                    Initializing real-time deliberation stream...
-                  </p>
-                  <p className="font-body-sm text-[11px] text-outline">
-                    Agent 1, Agent 2, and Arbiter-3 are parsing uploaded Party A & Party B documents.
+                </div>
+
+                {/* Bilateral Message Feed */}
+                <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 text-xs">
+                  {bilateralEvents.length === 0 ? (
+                    <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-1 my-auto">
+                      <span className="material-symbols-outlined text-outline text-2xl">forum</span>
+                      <p className="font-mono text-xs text-on-surface-variant font-semibold">
+                        2-Party Deliberation Channel
+                      </p>
+                      <p className="text-[11px] text-outline">
+                        Send messages or clause proposals directly to your counterparty counsel over WebSocket.
+                      </p>
+                    </div>
+                  ) : (
+                    bilateralEvents.map((evt, idx) => {
+                      if (evt.type === 'join') {
+                        return (
+                          <div key={idx} className="text-center my-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-secondary/15 text-secondary border border-secondary/30">
+                              {evt.sender_name || 'Counsel'} ({evt.sender_role || 'party'}) joined
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      if (evt.type === 'leave') {
+                        return (
+                          <div key={idx} className="text-center my-1.5">
+                            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-amber-500/15 text-amber-400 border border-amber-500/30">
+                              {evt.sender_name || 'Counsel'} ({evt.sender_role || 'party'}) left room
+                            </span>
+                          </div>
+                        );
+                      }
+
+                      if (evt.type === 'room_closed') {
+                        return (
+                          <div key={idx} className="p-2.5 rounded bg-error-container/20 border border-error/40 text-center space-y-1 my-1">
+                            <span className="material-symbols-outlined text-error text-lg">lock</span>
+                            <p className="font-mono text-[11px] font-bold text-error">
+                              {evt.text || 'Negotiation concluded and closed by creator.'}
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      if (evt.type === 'proposal' || evt.type === 'clause_submitted') {
+                        return (
+                          <div key={idx} className="p-2.5 rounded-lg border border-primary/40 bg-primary-container/10 space-y-1 shadow-xs">
+                            <div className="flex items-center justify-between text-[10px] font-mono text-primary font-bold">
+                              <span>PROPOSAL: {evt.clause_id}</span>
+                              <span>{evt.sender_name}</span>
+                            </div>
+                            <p className="text-xs font-serif italic text-on-surface">
+                              "{evt.proposal || evt.text}"
+                            </p>
+                          </div>
+                        );
+                      }
+
+                      // Default 'message'
+                      const isOwn = evt.sender_id === (isCreatorOfRoom ? roomDetail?.creator_id : roomDetail?.participant_id);
+
+                      return (
+                        <div
+                          key={idx}
+                          className={`flex flex-col max-w-[85%] ${
+                            isOwn ? 'ml-auto items-end' : 'mr-auto items-start'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1 text-[10px] font-mono text-outline mb-0.5">
+                            <span>{evt.sender_name || 'Counsel'}</span>
+                            <span>•</span>
+                            <span>{new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                          </div>
+                          <div
+                            className={`p-2.5 rounded-lg text-xs leading-relaxed ${
+                              isOwn
+                                ? 'bg-primary text-on-primary rounded-tr-none'
+                                : 'bg-surface-container-high text-on-surface rounded-tl-none border border-outline-variant/30'
+                            }`}
+                          >
+                            {evt.text}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                  <div ref={messagesEndRef} />
+                </div>
+
+                {/* Broadcast Selected Clause Proposal Action */}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="sync_alt"
+                  onClick={handleBroadcastClauseProposal}
+                  disabled={isRoomClosed || !wsConnected}
+                  className="w-full text-xs shrink-0"
+                >
+                  Broadcast Current Clause Proposal
+                </Button>
+
+                {/* Chat Message Input Form */}
+                <form onSubmit={handleSendBilateralMessage} className="flex gap-2 pt-1 shrink-0 border-t border-outline-variant/20">
+                  <input
+                    type="text"
+                    value={chatInput}
+                    onChange={(e) => setChatInput(e.target.value)}
+                    placeholder={
+                      isRoomClosed
+                        ? 'Room is closed.'
+                        : !wsConnected
+                        ? 'Connecting...'
+                        : 'Message counterparty counsel...'
+                    }
+                    disabled={isRoomClosed || !wsConnected}
+                    className="flex-1 bg-surface-container border border-outline-variant/40 rounded px-2.5 py-1.5 text-xs text-on-surface placeholder:text-outline focus:outline-none focus:border-primary"
+                  />
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    icon="send"
+                    type="submit"
+                    disabled={isRoomClosed || !wsConnected || !chatInput.trim()}
+                  >
+                    Send
+                  </Button>
+                </form>
+              </div>
+            ) : (
+              /* TAB 2: AI PIPELINE DELIBERATION STREAM (SSE) - UNCHANGED */
+              <>
+                <div className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
+                  <span className={`w-2 h-2 rounded-full shrink-0 ${
+                    liveStatus === 'PENDING HUMAN REVIEW' ? 'bg-amber-500' : 'bg-primary animate-pulse'
+                  }`} />
+                  <span className="truncate font-semibold text-primary">{liveStatus}</span>
+                </div>
+
+                <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+                  {deliberationEvents.length === 0 ? (
+                    <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-2">
+                      <span className="material-symbols-outlined text-outline text-2xl animate-spin">
+                        sync
+                      </span>
+                      <p className="font-mono text-xs text-on-surface-variant font-semibold">
+                        Initializing real-time deliberation stream...
+                      </p>
+                      <p className="font-body-sm text-[11px] text-outline">
+                        Agent 1, Agent 2, and Arbiter-3 are parsing uploaded Party A & Party B documents.
+                      </p>
+                    </div>
+                  ) : (
+                    deliberationEvents.map((evt, idx) => {
+                      const agentKey = (evt.agent || 'a1').toLowerCase();
+                      const isA1 = agentKey === 'a1';
+                      const isA2 = agentKey === 'a2';
+                      const isA3 = agentKey === 'a3';
+                      const isOrchestrator = agentKey === 'orchestrator' || evt.role === 'review_boundary';
+
+                      const formattedTime = evt.timestamp
+                        ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                        : '';
+
+                      return (
+                        <article
+                          key={evt.eventId || evt.event_id || `delib-${idx}`}
+                          className={`p-3 rounded border text-xs leading-relaxed space-y-2 transition-all ${
+                            isA1
+                              ? 'bg-blue-500/5 border-blue-500/20 text-on-surface'
+                              : isA2
+                              ? 'bg-amber-500/5 border-amber-500/20 text-on-surface'
+                              : isA3
+                              ? 'bg-emerald-500/5 border-emerald-500/30 text-on-surface shadow-xs'
+                              : 'bg-surface-container-high/40 border-amber-500/40 text-on-surface'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/10">
+                            <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold">
+                              <span
+                                className={`w-2 h-2 rounded-full ${
+                                  isA1
+                                    ? 'bg-blue-400'
+                                    : isA2
+                                    ? 'bg-amber-400'
+                                    : isA3
+                                    ? 'bg-emerald-400'
+                                    : 'bg-amber-500'
+                                }`}
+                              />
+                              <span
+                                className={
+                                  isA1
+                                    ? 'text-blue-400'
+                                    : isA2
+                                    ? 'text-amber-400'
+                                    : isA3
+                                    ? 'text-emerald-400'
+                                    : 'text-amber-500'
+                                }
+                              >
+                                {evt.agentName || evt.agent_name || (isA1 ? 'Lex-Ingestor A' : isA2 ? 'Lex-Ingestor B' : isA3 ? 'Arbiter-3' : 'System Orchestrator')}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center gap-1.5 font-mono text-[10px] text-outline">
+                              {evt.source && (
+                                <span className="px-1 py-0.2 bg-surface-container-high rounded text-[9px] font-semibold text-outline">
+                                  {evt.source}
+                                </span>
+                              )}
+                              <span>{formattedTime}</span>
+                            </div>
+                          </div>
+
+                          <p className="font-body-sm text-xs font-normal text-on-surface text-balance">
+                            {evt.message}
+                          </p>
+
+                          {(evt.clauseIds?.length || evt.clause_ids?.length) ? (
+                            <div className="flex flex-wrap items-center gap-1 pt-1">
+                              <span className="font-mono text-[10px] text-outline font-semibold">
+                                Affected Clauses:
+                              </span>
+                              {(evt.clauseIds || evt.clause_ids || []).map((cid) => (
+                                <button
+                                  key={cid}
+                                  onClick={() => handleClauseClick(cid)}
+                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-surface-container-high hover:bg-surface-container text-on-surface font-mono text-[10px] rounded border border-outline-variant/30 transition-colors"
+                                >
+                                  <span className="material-symbols-outlined text-[10px]">link</span>
+                                  <span>{cid}</span>
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+
+                          {(typeof evt.riskScore === 'number' || typeof evt.risk_score === 'number') && (
+                            <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/30 rounded font-mono text-[10px] font-bold">
+                              <span>Risk: {(evt.riskScore ?? evt.risk_score)?.toFixed(1)}/10</span>
+                            </div>
+                          )}
+
+                          {isA3 && (
+                            <div className="space-y-1.5 pt-1 border-t border-outline-variant/15 font-body-sm text-[11px]">
+                              {(evt.legalImpact || evt.legal_impact) && (
+                                <div className="p-1.5 bg-red-500/5 border border-red-500/20 rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-red-400 flex items-center gap-1 uppercase">
+                                    <span className="material-symbols-outlined text-[12px]">gavel</span>
+                                    Legal Exposure
+                                  </span>
+                                  <p className="text-on-surface-variant text-[11px]">
+                                    {evt.legalImpact || evt.legal_impact}
+                                  </p>
+                                </div>
+                              )}
+
+                              {(evt.commercialImpact || evt.commercial_impact) && (
+                                <div className="p-1.5 bg-emerald-500/5 border border-emerald-500/20 rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-emerald-400 flex items-center gap-1 uppercase">
+                                    <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                    Commercial Impact
+                                  </span>
+                                  <p className="text-on-surface-variant text-[11px]">
+                                    {evt.commercialImpact || evt.commercial_impact}
+                                  </p>
+                                </div>
+                              )}
+
+                              {evt.recommendation && (
+                                <div className="p-1.5 bg-amber-500/10 border border-amber-500/30 rounded space-y-0.5">
+                                  <span className="font-mono text-[10px] font-bold text-amber-500 flex items-center gap-1 uppercase">
+                                    <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
+                                    Recommended Compromise
+                                  </span>
+                                  <p className="text-on-surface font-medium text-[11px]">
+                                    {evt.recommendation}
+                                  </p>
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                          {isOrchestrator && (
+                            <div className="p-2 bg-amber-500/15 border border-amber-500/40 rounded space-y-1">
+                              <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-amber-400 uppercase">
+                                <span className="material-symbols-outlined text-sm">verified_user</span>
+                                <span>STATUS: PENDING HUMAN REVIEW</span>
+                              </div>
+                              <p className="font-body-sm text-[11px] text-on-surface-variant">
+                                Deliberation complete. Recommendations staged. General Counsel review required before execution.
+                              </p>
+                            </div>
+                          )}
+                        </article>
+                      );
+                    })
+                  )}
+                </div>
+
+                <div className="p-2.5 bg-surface-container-low border border-amber-500/30 rounded text-xs space-y-1 shrink-0">
+                  <div className="flex items-center justify-between font-mono text-[11px] font-bold text-amber-500">
+                    <span className="flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">gavel</span>
+                      HUMAN REVIEW BOUNDARY
+                    </span>
+                    <span className="bg-amber-500/20 px-1.5 py-0.5 rounded text-[9px] uppercase">
+                      UNSEALED
+                    </span>
+                  </div>
+                  <p className="font-body-sm text-[10px] text-on-surface-variant leading-tight">
+                    AI agents generate compromises based on matter files. General Counsel sign-off is required.
                   </p>
                 </div>
+<<<<<<< Updated upstream
               ) : (
                 deliberationEvents.map((evt, idx) => {
                   const agentKey = (evt.agent || 'a1').toLowerCase();
@@ -953,6 +1733,10 @@ export const NegotiationWorkspace: React.FC = () => {
                 AI agents generate compromises based on matter files. General Counsel sign-off is required.
               </p>
             </div>
+=======
+              </>
+            )}
+>>>>>>> Stashed changes
           </div>
 
           {/* Action Bottom Cluster */}

@@ -9,6 +9,7 @@ from app.routers.contracts import router as contracts_router
 from app.routers.negotiations import router as negotiations_router
 from app.routers.pipeline import router as pipeline_router
 from app.routers.reports import router as reports_router
+from app.routers.rooms import router as rooms_router
 from app.routers.sandbox import router as sandbox_router
 
 
@@ -47,7 +48,14 @@ app.include_router(pipeline_router)
 app.include_router(contracts_router)
 app.include_router(negotiations_router)
 app.include_router(reports_router)
+app.include_router(rooms_router)
 app.include_router(sandbox_router)
+
+from app.routers.negotiation_ws import router as negotiation_ws_router
+app.include_router(negotiation_ws_router)
+
+from app.routers.rooms import room_websocket_endpoint
+app.add_api_websocket_route("/ws/rooms/{room_id}", room_websocket_endpoint)
 
 
 @app.get("/health", tags=["Health"])

@@ -9,6 +9,8 @@ from app.db.models import (
     ReportDB,
     ReviewActionDB,
     NegotiationCheckpointDB,
+    NegotiationRoomDB,
+    NegotiationRoom,
 )
 
 __all__ = [
@@ -26,4 +28,6 @@ __all__ = [
     "ReviewActionDB",
     "AuditRecordDB",
     "NegotiationCheckpointDB",
+    "NegotiationRoomDB",
+    "NegotiationRoom",
 ]

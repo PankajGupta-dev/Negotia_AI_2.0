@@ -241,6 +241,28 @@ def get_db() -> Generator[Session, None, None]:
 
 
 def init_db() -> None:
-    """Create all database tables based on SQLAlchemy models."""
+    """Create all database tables based on SQLAlchemy models and ensure required columns."""
+    from sqlalchemy import text
     Base.metadata.create_all(bind=engine)
+    with engine.connect() as conn:
+        try:
+            conn.execute(text("ALTER TABLE negotiation_rooms ADD COLUMN room_id VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("ALTER TABLE negotiation_rooms ADD COLUMN participant_id VARCHAR"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("UPDATE negotiation_rooms SET room_id = id WHERE room_id IS NULL"))
+            conn.commit()
+        except Exception:
+            pass
+        try:
+            conn.execute(text("UPDATE negotiation_rooms SET participant_id = guest_id WHERE participant_id IS NULL"))
+            conn.commit()
+        except Exception:
+            pass
 

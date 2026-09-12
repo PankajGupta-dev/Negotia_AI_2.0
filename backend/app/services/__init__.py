@@ -42,6 +42,16 @@ from app.services.audit_service import (
     calculate_sha256,
     serialize_canonical_json,
 )
+from app.services.room_service import (
+    admit_participant,
+    close_room,
+    create_room,
+    generate_collision_safe_room_id,
+    get_room,
+    leave_room,
+    reject_participant,
+    request_join,
+)
 
 __all__ = [
     # Matter Service
@@ -82,6 +92,15 @@ __all__ = [
     "serialize_canonical_json",
     "assemble_canonical_payload",
     "calculate_sha256",
+    # Room Service
+    "create_room",
+    "get_room",
+    "request_join",
+    "admit_participant",
+    "reject_participant",
+    "leave_room",
+    "close_room",
+    "generate_collision_safe_room_id",
 ]
 
 

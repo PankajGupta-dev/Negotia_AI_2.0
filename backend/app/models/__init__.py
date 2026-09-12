@@ -28,6 +28,10 @@ from app.models.report import (
     ReviewActionType,
     ReviewStatus,
 )
+from app.models.room import (
+    NegotiationRoom,
+    RoomStatus,
+)
 
 __all__ = [
     # Matter & Document
@@ -55,4 +59,7 @@ __all__ = [
     "AuditRecord",
     "ReviewActionType",
     "ReviewStatus",
+    # Room
+    "NegotiationRoom",
+    "RoomStatus",
 ]

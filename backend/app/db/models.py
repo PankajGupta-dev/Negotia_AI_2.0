@@ -213,3 +213,57 @@ class NegotiationCheckpointDB(Base):
     # Relationship
     matter: Mapped["MatterDB"] = relationship("MatterDB", back_populates="checkpoints")
 
+
+class NegotiationRoomDB(Base):
+    __tablename__ = "negotiation_rooms"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)  # Primary key (Room ID)
+    room_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    matter_id: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    creator_id: Mapped[str] = mapped_column(String)
+    participant_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+
+    # Status: waiting | active | closed | expired
+    status: Mapped[str] = mapped_column(String, default="waiting")
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    closed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+    # Additional metadata fields for room management and live WebSocket communication
+    title: Mapped[str] = mapped_column(String, default="Private Bilateral Negotiation Room")
+    passcode: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="SEC-0000")
+    creator_name: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="Creator")
+    creator_role: Mapped[Optional[str]] = mapped_column(String, nullable=True, default="buyer")
+    creator_token: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    guest_id: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    guest_name: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    guest_role: Mapped[Optional[str]] = mapped_column(String, nullable=True)
+    guest_token: Mapped[Optional[str]] = mapped_column(String, nullable=True, index=True)
+    guest_status: Mapped[str] = mapped_column(String, default="none")  # none, pending_approval, admitted, rejected, left
+    active_participants_count: Mapped[int] = mapped_column(Integer, default=1)
+    messages: Mapped[Optional[list]] = mapped_column(JSON, default=list)
+    shared_state: Mapped[Optional[dict]] = mapped_column(JSON, default=dict)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    def __init__(self, **kwargs):
+        # Ensure room_id and id are always synchronized
+        if "room_id" in kwargs and "id" not in kwargs:
+            kwargs["id"] = kwargs["room_id"]
+        elif "id" in kwargs and "room_id" not in kwargs:
+            kwargs["room_id"] = kwargs["id"]
+
+        # Ensure participant_id and guest_id are synchronized
+        if "participant_id" in kwargs and "guest_id" not in kwargs:
+            kwargs["guest_id"] = kwargs["participant_id"]
+        elif "guest_id" in kwargs and "participant_id" not in kwargs:
+            kwargs["participant_id"] = kwargs["guest_id"]
+
+        if "creator_token" not in kwargs or not kwargs["creator_token"]:
+            import secrets
+            kwargs["creator_token"] = f"ctok_{secrets.token_hex(12)}"
+
+        super().__init__(**kwargs)
+
+
+# Alias for database model
+NegotiationRoom = NegotiationRoomDB
+
