@@ -509,7 +509,7 @@ export const AgentPipeline: React.FC = () => {
                 ? 'bg-[#F0FDF4] border-[#16A34A]/50 text-[#166534]'
                 : checkpoint.status === 'DISAGREE'
                 ? 'bg-[#FEF2F2] border-[#DC2626]/60 text-[#991B1B]'
-                : 'bg-surface-container-low border-primary/40 text-on-surface'
+                : 'bg-[#FAF7F2] border-[#D6CEBE] text-[#1C1917]'
             }`}
           >
             <div className="flex flex-wrap items-center justify-between gap-3">
@@ -537,17 +537,17 @@ export const AgentPipeline: React.FC = () => {
                     : `NEGOTIATING (Round ${checkpoint.round_number || 1}/6)`}
                 </span>
 
-                <span className="text-xs font-mono text-on-surface-variant">
-                  Round: <strong className="text-on-surface">{checkpoint.round_number || 1}</strong>/6 | Elapsed: <strong className="text-on-surface">{(checkpoint.elapsed_seconds || 0).toFixed(1)}s</strong> | Context: <strong className="text-on-surface">~{checkpoint.token_usage_estimate || 0} tokens</strong>
+                <span className="text-xs font-mono text-[#78716C] font-semibold">
+                  Round: <strong className="text-[#1C1917]">{checkpoint.round_number || 1}</strong>/6 | Elapsed: <strong className="text-[#1C1917]">{(checkpoint.elapsed_seconds || 0).toFixed(1)}s</strong> | Context: <strong className="text-[#1C1917]">~{checkpoint.token_usage_estimate || 0} tokens</strong>
                 </span>
               </div>
 
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/30">
-                  Agreed Clauses: <strong className="text-[#16A34A]">{checkpoint.agreed_clauses?.length || 0}</strong>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#DCFCE7] border border-[#86EFAC] text-[#166534] font-bold">
+                  Agreed Clauses: <strong className="text-[#166534]">{checkpoint.agreed_clauses?.length || 0}</strong>
                 </span>
-                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-surface-container-high border border-outline-variant/30">
-                  Unresolved: <strong className="text-[#DC2626]">{checkpoint.unresolved_clauses?.length || 0}</strong>
+                <span className="text-[11px] font-mono px-2 py-0.5 rounded bg-[#FEE2E2] border border-[#FCA5A5] text-[#991B1B] font-bold">
+                  Unresolved: <strong className="text-[#991B1B]">{checkpoint.unresolved_clauses?.length || 0}</strong>
                 </span>
               </div>
             </div>
