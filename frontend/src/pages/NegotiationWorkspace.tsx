@@ -469,15 +469,21 @@ export const NegotiationWorkspace: React.FC = () => {
           const now = data.timestamp || new Date().toISOString();
           if (data.type === 'history' && Array.isArray(data.messages)) {
             setBilateralEvents((prev) => {
-              const prevKeys = new Set(prev.map((e) => `${e.timestamp}_${e.text || e.clause_id || e.sender_name || ''}`));
+              const prevIds = new Set(prev.map((e) => e.id).filter(Boolean));
               let hasNew = false;
               const merged = [...prev];
               for (const m of data.messages) {
                 // Filter out transient disconnect messages and joins from history
                 if (m.type === 'leave' || m.type === 'join') continue;
-                const key = `${m.timestamp}_${m.text || m.clause_id || m.sender_name || ''}`;
-                if (!prevKeys.has(key)) {
-                  prevKeys.add(key);
+                if (m.id && prevIds.has(m.id)) continue;
+                const isDup = merged.some((e) => {
+                  if (e.type !== m.type) return false;
+                  const sameContent = (e.text || e.clause_id || e.proposal || '') === (m.text || m.clause_id || m.proposal || '');
+                  const sameRole = !e.sender_role || !m.sender_role || e.sender_role.toLowerCase() === m.sender_role.toLowerCase();
+                  return sameContent && sameRole;
+                });
+                if (!isDup) {
+                  if (m.id) prevIds.add(m.id);
                   merged.push(m);
                   hasNew = true;
                 }
@@ -547,8 +553,22 @@ export const NegotiationWorkspace: React.FC = () => {
             data.type === 'system'
           ) {
             setBilateralEvents((prev) => {
-              const key = `${now}_${data.text || data.clause_id || data.proposal || ''}`;
-              if (prev.some((e) => `${e.timestamp}_${e.text || e.clause_id || e.proposal || ''}` === key)) {
+              // 1. Deduplicate by explicit message ID
+              if (data.id && prev.some((e) => e.id === data.id)) {
+                return prev;
+              }
+              // 2. Deduplicate by content and sender role within 15s window
+              const dataTime = new Date(now).getTime();
+              const isDuplicate = prev.some((e) => {
+                if (e.type !== data.type) return false;
+                const sameContent = (e.text || e.clause_id || e.proposal || '') === (data.text || data.clause_id || data.proposal || '');
+                if (!sameContent) return false;
+                const sameRole = !e.sender_role || !data.sender_role || e.sender_role.toLowerCase() === data.sender_role.toLowerCase();
+                if (!sameRole) return false;
+                const eTime = new Date(e.timestamp).getTime();
+                return isNaN(eTime) || Math.abs(eTime - dataTime) < 15000;
+              });
+              if (isDuplicate) {
                 return prev;
               }
               return [...prev, { ...data, timestamp: now }];
@@ -667,19 +687,6 @@ export const NegotiationWorkspace: React.FC = () => {
     setChatInput('');
 
     const msgId = `msg_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
-    const tempNow = new Date().toISOString();
-    setBilateralEvents((prev) => [
-      ...prev,
-      {
-        id: msgId,
-        type: 'message',
-        sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
-        sender_name: myName,
-        sender_role: myRole,
-        text: cleanText,
-        timestamp: tempNow,
-      },
-    ]);
 
     let wsSent = false;
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
@@ -700,10 +707,10 @@ export const NegotiationWorkspace: React.FC = () => {
       }
     }
 
-    // If WebSocket wasn't open, use REST API fallback so the message is always delivered
+    // If WebSocket wasn't open, use REST API fallback and append server response
     if (!wsSent) {
       try {
-        await sendRoomMessage(targetMatterId, {
+        const res = await sendRoomMessage(targetMatterId, {
           id: msgId,
           text: cleanText,
           sender_id: myId || (isCreatorOfRoom ? 'creator' : 'participant'),
@@ -711,6 +718,14 @@ export const NegotiationWorkspace: React.FC = () => {
           sender_role: myRole,
           token: token,
         });
+        if (res && res.message) {
+          setBilateralEvents((prev) => {
+            if (prev.some((e) => e.id === res.message.id || (e.text === res.message.text && e.sender_role === res.message.sender_role))) {
+              return prev;
+            }
+            return [...prev, res.message];
+          });
+        }
       } catch (err) {
         console.warn('REST message persist notice:', err);
       }

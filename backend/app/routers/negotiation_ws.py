@@ -465,8 +465,9 @@ async def negotiation_websocket_endpoint(
                 text = (data.get("text") or "").strip()
                 if not text:
                     continue
+                msg_id = data.get("id") or f"msg_{uuid.uuid4().hex[:10]}"
                 msg_event = {
-                    "id": f"msg_{uuid.uuid4().hex[:10]}",
+                    "id": msg_id,
                     "type": "message",
                     "sender_id": pid,
                     "sender_name": sender_name,
