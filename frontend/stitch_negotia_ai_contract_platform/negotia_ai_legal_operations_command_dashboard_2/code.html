@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+
+<html lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Negotia AI — Legal Operations Command</title>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400..700;1,400..700&amp;family=JetBrains+Mono:wght@400;500;600;700&amp;family=Plus+Jakarta+Sans:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ink: {
+              DEFAULT: '#161311',
+              card: '#1E1B19',
+              lighter: '#2A2624',
+              border: '#383432',
+              muted: '#78716C'
+            },
+            parchment: {
+              DEFAULT: '#F5F1E8',
+              light: '#FAF7F2',
+              card: '#FFFFFF',
+              border: '#E2DDD3',
+              subtle: '#EDE8DE',
+              text: '#1C1917',
+              muted: '#666059'
+            },
+            amber: {
+              DEFAULT: '#D97706',
+              glow: '#B45309',
+              light: '#F59E0B',
+              soft: '#FEF3C7'
+            },
+            forest: {
+              DEFAULT: '#166534',
+              soft: '#DCFCE7',
+              border: '#86EFAC'
+            },
+            rust: {
+              DEFAULT: '#991B1B',
+              soft: '#FEE2E2',
+              border: '#FCA5A5'
+            }
+          },
+          fontFamily: {
+            display: ['EB Garamond', 'serif'],
+            body: ['Plus Jakarta Sans', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace']
+          }
+        }
+      }
+    };
+  </script>
+<style>
+    @layer base {
+      html, body {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+      }
+    }
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #EDE8DE;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #C7BEB1;
+      border-radius: 3px;
+    }
+    .custom-scrollbar-dark::-webkit-scrollbar-track {
+      background: #161311;
+    }
+    .custom-scrollbar-dark::-webkit-scrollbar-thumb {
+      background: #383432;
+      border-radius: 3px;
+    }
+  </style>
+</head>
+<body class="bg-parchment font-body text-parchment-text antialiased selection:bg-amber-100 selection:text-amber-900 min-h-screen flex">
+<!-- LEFT SIDEBAR: DARK INK (#161311) -->
+<aside class="w-72 bg-ink text-neutral-200 fixed inset-y-0 left-0 z-50 flex flex-col justify-between border-r border-ink-border select-none shrink-0 shadow-2xl">
+<div class="flex flex-col flex-1 min-h-0">
+<!-- Brand Header -->
+<div class="h-16 px-5 border-b border-ink-border/60 flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-amber flex items-center justify-center text-white font-serif font-bold text-lg shadow-sm border border-amber-light/30">
+          N
+        </div>
+<div class="flex flex-col justify-center">
+<div class="flex items-center gap-1.5">
+<span class="font-display text-xl tracking-wider text-neutral-100 uppercase font-bold">Negotia</span>
+<span class="bg-amber text-neutral-950 font-mono text-[10px] px-1.5 py-0.5 rounded font-bold tracking-widest leading-none">AI</span>
+</div>
+<span class="font-mono text-[10px] text-neutral-400 tracking-wider uppercase">Enterprise Legal Terminal</span>
+</div>
+</div>
+<!-- Navigation Section Label -->
+<div class="px-5 py-3 border-b border-ink-border/30 flex items-center justify-between text-neutral-400">
+<span class="font-mono text-[11px] uppercase tracking-wider font-semibold">Matter Portfolio</span>
+<span class="material-symbols-outlined text-sm">gavel</span>
+</div>
+<!-- Nav Links -->
+<nav class="flex-1 px-3 py-3 space-y-1 overflow-y-auto custom-scrollbar-dark text-sm">
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-amber bg-ink-lighter text-amber-light font-medium transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-amber">handshake</span>
+<span>Negotiation Room</span>
+</div>
+<span class="material-symbols-outlined text-sm text-neutral-500">chevron_right</span>
+</a>
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-transparent text-neutral-300 hover:bg-ink-card hover:text-white transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-neutral-400">edit_document</span>
+<span>Redline Feed</span>
+</div>
+<span class="bg-rust text-white font-mono text-[10px] px-1.5 py-0.5 rounded font-bold tracking-wider uppercase">4 Pending</span>
+</a>
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-transparent text-neutral-300 hover:bg-ink-card hover:text-white transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-neutral-400">menu_book</span>
+<span>Clause Playbook</span>
+</div>
+</a>
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-transparent text-neutral-300 hover:bg-ink-card hover:text-white transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-neutral-400">shield</span>
+<span>Risk Matrix</span>
+</div>
+<span class="font-mono text-[11px] text-amber">92% Cover</span>
+</a>
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-transparent text-neutral-300 hover:bg-ink-card hover:text-white transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-neutral-400">history_edu</span>
+<span>Precedents Archive</span>
+</div>
+</a>
+<a class="flex items-center justify-between px-3 py-2 rounded border-l-2 border-transparent text-neutral-300 hover:bg-ink-card hover:text-white transition-colors" href="#">
+<div class="flex items-center gap-3">
+<span class="material-symbols-outlined text-lg text-neutral-400">verified</span>
+<span>Audit &amp; Provenance</span>
+</div>
+<span class="w-2 h-2 rounded-full bg-forest"></span>
+</a>
+</nav>
+</div>
+<!-- Sidebar Bottom / Agent Counsel + Profile -->
+<div class="p-4 border-t border-ink-border/60 bg-ink-card space-y-3">
+<div class="p-2.5 bg-ink rounded border border-amber/30 space-y-1">
+<div class="flex items-center gap-2">
+<span class="relative flex h-2 w-2">
+<span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber opacity-75"></span>
+<span class="relative inline-flex rounded-full h-2 w-2 bg-amber"></span>
+</span>
+<span class="font-mono text-[11px] text-amber uppercase font-semibold tracking-wider">Agent Counsel: Active</span>
+</div>
+<p class="font-mono text-[10px] text-neutral-400 leading-tight">Autonomous playbooks trained on 48,000+ Master Services Agreements</p>
+</div>
+<div class="flex items-center justify-between pt-1">
+<div class="flex items-center gap-2.5 min-w-0">
+<img alt="Elena Rostova" class="w-8 h-8 rounded-full object-cover border border-amber/40" src="https://lh3.googleusercontent.com/aida-public/AB6AXuA31SXAygZjN1d-Z5InZ23dXOdE5ob8UO7HLsRlH16N9J2mwCSICPAounW4oeahBqTxd0OiAJnazetVBUMYSYCha3K6mh62jshyE2_hEtAUyZrXqe0ikSZqYqadKPmUMOfMgy1NS-oVzYlsO6Qfk0oGy1W6x-d5d_J3qyJckxioJpq84ARnfADCz34njthnHvTjRXJvfvKHFNQTSa6pZ5JvIuBnZ9qs5_NlN4_llBSBo6RmU7x8WgCh"/>
+<div class="min-w-0">
+<p class="text-xs font-semibold text-neutral-200 truncate">Elena Rostova</p>
+<p class="font-mono text-[10px] text-neutral-400 truncate">General Counsel</p>
+</div>
+</div>
+<span class="font-mono text-[10px] text-emerald-400 bg-emerald-950/80 px-1.5 py-0.5 rounded border border-emerald-700/50 uppercase">Enterprise</span>
+</div>
+</div>
+</aside>
+<!-- MAIN VIEWPORT CONTAINER: WARM PARCHMENT (#F5F1E8) -->
+<div class="pl-72 w-full flex-1 flex flex-col min-h-screen bg-parchment">
+<!-- STICKY APEX BAR: MATTER CONTEXT & PRIMARY ACTIONS -->
+<header class="sticky top-0 z-40 bg-parchment-light/95 backdrop-blur border-b border-parchment-border px-8 py-3.5 flex flex-wrap items-center justify-between gap-4 shadow-sm">
+<div class="flex items-center gap-4 min-w-0">
+<div class="w-2.5 h-8 bg-amber rounded-sm shrink-0"></div>
+<div class="min-w-0">
+<div class="flex items-center gap-2 flex-wrap">
+<span class="font-display text-xl font-bold text-parchment-text tracking-tight">Matter #2025-MSA-409</span>
+<span class="text-parchment-muted font-mono text-xs">/</span>
+<span class="font-body text-sm font-semibold text-neutral-700">Cloud Services &amp; Enterprise License Agreement</span>
+<span class="bg-amber-soft text-amber-glow border border-amber/30 text-[11px] font-mono font-bold px-2 py-0.5 rounded uppercase">Round 3 of 4</span>
+</div>
+<p class="text-xs text-parchment-muted flex items-center gap-2 mt-0.5">
+<span>Counterparty: <strong class="text-parchment-text font-medium">Apex Dynamics Corp.</strong></span>
+<span>•</span>
+<span class="font-mono text-rust font-semibold">Counterparty Redline Received (2 Dealbreaker Flags)</span>
+</p>
+</div>
+</div>
+<!-- Action Buttons -->
+<div class="flex items-center gap-2.5 shrink-0">
+<button class="px-3.5 py-2 bg-parchment-card hover:bg-parchment-subtle text-parchment-text border border-parchment-border rounded text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-base text-neutral-600">difference</span>
+<span>Compare Diff</span>
+</button>
+<button class="px-3.5 py-2 bg-parchment-card hover:bg-parchment-subtle text-parchment-text border border-parchment-border rounded text-xs font-semibold shadow-sm transition-all flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-base text-neutral-600">download</span>
+<span>Export Conformed Copy</span>
+</button>
+<button class="px-4 py-2 bg-amber hover:bg-amber-glow text-white rounded text-xs font-bold shadow transition-all flex items-center gap-1.5" type="button">
+<span class="material-symbols-outlined text-base">draw</span>
+<span>Draft Compromise Clause</span>
+</button>
+</div>
+</header>
+<!-- CONTENT BODY -->
+<main class="flex-1 p-8 space-y-7 max-w-7xl w-full mx-auto">
+<!-- SUB-HEADER / HERO TITLE ROW -->
+<div class="flex flex-col md:flex-row md:items-end justify-between gap-4 pb-2 border-b border-parchment-border">
+<div>
+<div class="flex items-center gap-2 text-parchment-muted font-mono text-[11px] uppercase tracking-wider mb-1">
+<span class="w-1.5 h-1.5 rounded-full bg-forest"></span>
+<span>Legal Operations Command Console</span>
+<span>•</span>
+<span>Delaware Jurisdiction Model v4.9</span>
+</div>
+<h1 class="font-display text-3xl md:text-4xl text-parchment-text font-bold tracking-tight">
+            Autonomous Portfolio Docket
+          </h1>
+</div>
+<!-- Filter / Quick Search -->
+<div class="flex items-center gap-2">
+<div class="relative">
+<span class="material-symbols-outlined absolute left-2.5 top-2 text-neutral-400 text-sm">search</span>
+<input class="w-64 pl-8 pr-3 py-1.5 text-xs bg-parchment-card border border-parchment-border rounded text-parchment-text placeholder:text-neutral-400 focus:outline-none focus:border-amber focus:ring-1 focus:ring-amber font-body" placeholder="Search 142 matters, counter-clauses..." type="text"/>
+</div>
+<button class="px-3 py-1.5 bg-neutral-900 hover:bg-neutral-800 text-white rounded text-xs font-semibold flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-sm">tune</span>
+<span>Filter</span>
+</button>
+</div>
+</div>
+<!-- EXECUTIVE KPI STAT CARDS ROW (4 CARDS) -->
+<section class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+<!-- Card 1: Active Matters -->
+<div class="bg-parchment-card p-5 rounded border border-parchment-border shadow-sm flex flex-col justify-between hover:border-amber/60 transition-colors">
+<div class="flex items-center justify-between text-parchment-muted">
+<span class="font-mono text-[11px] uppercase tracking-wider font-semibold">Active Matters</span>
+<span class="p-1 rounded bg-amber-soft text-amber-glow">
+<span class="material-symbols-outlined text-base">folder_open</span>
+</span>
+</div>
+<div class="my-3 flex items-baseline gap-2">
+<span class="font-display text-3xl md:text-4xl font-bold text-parchment-text">14</span>
+<span class="text-xs font-semibold text-forest flex items-center font-mono">
+<span class="material-symbols-outlined text-xs">trending_up</span> +3 this month
+            </span>
+</div>
+<div class="text-[12px] text-parchment-muted border-t border-parchment-subtle pt-2 flex items-center justify-between">
+<span>8 in high exposure tier</span>
+<span class="font-mono text-neutral-700 font-semibold">3 need action</span>
+</div>
+</div>
+<!-- Card 2: Avg Cycle -->
+<div class="bg-parchment-card p-5 rounded border border-parchment-border shadow-sm flex flex-col justify-between hover:border-amber/60 transition-colors">
+<div class="flex items-center justify-between text-parchment-muted">
+<span class="font-mono text-[11px] uppercase tracking-wider font-semibold">Avg Negotiation Cycle</span>
+<span class="p-1 rounded bg-emerald-50 text-forest">
+<span class="material-symbols-outlined text-base">timelapse</span>
+</span>
+</div>
+<div class="my-3 flex items-baseline gap-2">
+<span class="font-display text-3xl md:text-4xl font-bold text-parchment-text">4.2 <span class="text-lg font-body font-normal text-parchment-muted">Days</span></span>
+<span class="text-xs font-bold text-forest bg-forest-soft px-1.5 py-0.5 rounded font-mono">-38%</span>
+</div>
+<div class="text-[12px] text-parchment-muted border-t border-parchment-subtle pt-2 flex items-center justify-between">
+<span>Industry baseline: 14.6d</span>
+<span class="text-forest font-semibold">10.4d saved</span>
+</div>
+</div>
+<!-- Card 3: Exposure Mitigated -->
+<div class="bg-parchment-card p-5 rounded border border-parchment-border shadow-sm flex flex-col justify-between hover:border-amber/60 transition-colors">
+<div class="flex items-center justify-between text-parchment-muted">
+<span class="font-mono text-[11px] uppercase tracking-wider font-semibold">Risk Exposure Mitigated</span>
+<span class="p-1 rounded bg-amber-soft text-amber-glow">
+<span class="material-symbols-outlined text-base">verified_user</span>
+</span>
+</div>
+<div class="my-3 flex items-baseline gap-2">
+<span class="font-display text-3xl md:text-4xl font-bold text-parchment-text">$18.4M</span>
+<span class="text-xs font-semibold text-neutral-600 font-mono">Q3 Cumulative</span>
+</div>
+<div class="text-[12px] text-parchment-muted border-t border-parchment-subtle pt-2 flex items-center justify-between">
+<span>Uncapped indemnities prevented</span>
+<span class="font-mono text-neutral-700 font-semibold">97.8%</span>
+</div>
+</div>
+<!-- Card 4: Concession Rate -->
+<div class="bg-parchment-card p-5 rounded border border-parchment-border shadow-sm flex flex-col justify-between hover:border-amber/60 transition-colors">
+<div class="flex items-center justify-between text-parchment-muted">
+<span class="font-mono text-[11px] uppercase tracking-wider font-semibold">Algorithmic Concession Rate</span>
+<span class="p-1 rounded bg-amber-soft text-amber">
+<span class="material-symbols-outlined text-base">balance</span>
+</span>
+</div>
+<div class="my-3 flex items-baseline justify-between">
+<div class="flex items-baseline gap-2">
+<span class="font-display text-3xl md:text-4xl font-bold text-parchment-text">92.6%</span>
+<span class="text-xs font-semibold text-forest font-mono">Optimal</span>
+</div>
+<div class="w-8 h-8 rounded-full border-2 border-amber border-t-transparent flex items-center justify-center font-mono text-[10px] text-amber font-bold">
+              AI
+            </div>
+</div>
+<div class="text-[12px] text-parchment-muted border-t border-parchment-subtle pt-2 flex items-center justify-between">
+<span>Opposing counsel acceptance</span>
+<span class="font-mono text-neutral-700 font-semibold">Round 2.1 avg</span>
+</div>
+</div>
+</section>
+<!-- MAIN SECTION: LIVE PROCESSING & NEGOTIATION QUEUE -->
+<section class="bg-parchment-card rounded border border-parchment-border shadow-sm overflow-hidden">
+<div class="px-6 py-4 bg-parchment-light border-b border-parchment-border flex flex-wrap items-center justify-between gap-3">
+<div class="flex items-center gap-2.5">
+<span class="material-symbols-outlined text-amber text-xl">dataset</span>
+<div>
+<h2 class="font-display text-lg font-bold text-parchment-text">Active Negotiation Queue</h2>
+<p class="text-xs text-parchment-muted">Live state machine tracking bilateral counter-proposals &amp; clause divergence</p>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="inline-flex rounded-md shadow-sm">
+<button class="px-3 py-1 bg-neutral-900 text-white font-mono text-xs font-semibold rounded-l border border-neutral-900" type="button">All (14)</button>
+<button class="px-3 py-1 bg-parchment-card hover:bg-parchment-subtle text-neutral-700 font-mono text-xs font-medium border-t border-b border-parchment-border" type="button">Redlines (4)</button>
+<button class="px-3 py-1 bg-parchment-card hover:bg-parchment-subtle text-neutral-700 font-mono text-xs font-medium rounded-r border border-parchment-border" type="button">Autonomous (8)</button>
+</span>
+</div>
+</div>
+<!-- TABLE -->
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse text-xs">
+<thead>
+<tr class="bg-parchment-subtle/60 text-parchment-muted font-mono uppercase text-[10px] tracking-wider border-b border-parchment-border">
+<th class="py-3 px-6 font-semibold">Matter / Counterparty</th>
+<th class="py-3 px-4 font-semibold">Agreement Type</th>
+<th class="py-3 px-4 font-semibold text-center">Risk Score</th>
+<th class="py-3 px-4 font-semibold">Current Phase / Status</th>
+<th class="py-3 px-4 font-semibold">Divergent Clause</th>
+<th class="py-3 px-6 font-semibold text-right">Action</th>
+</tr>
+</thead>
+<tbody class="divide-y divide-parchment-border font-body">
+<!-- Row 1: Apex Dynamics -->
+<tr class="hover:bg-amber-50/40 transition-colors">
+<td class="py-3.5 px-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-rust"></span>
+<div>
+<div class="font-bold text-parchment-text font-mono text-xs">#2025-MSA-409</div>
+<div class="text-xs text-neutral-700 font-semibold">Apex Dynamics Corp.</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-neutral-700">
+<span class="font-medium">Enterprise MSA</span>
+<div class="text-[11px] text-parchment-muted">Value: $4.2M / 3-yr</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-block px-2 py-0.5 bg-rust-soft text-rust border border-rust-border rounded font-mono font-bold text-[11px]">
+                    9.4 / 10
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-rust-soft text-rust border border-rust-border">
+<span class="w-1.5 h-1.5 rounded-full bg-rust"></span>
+                    Counterparty Redline Received
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<p class="font-serif italic text-neutral-800 text-xs">§ 9.2 Limitation of Liability (Uncapped Indemnity)</p>
+<span class="text-[11px] text-parchment-muted font-mono">Opposing: Gibson &amp; Vance LLP</span>
+</td>
+<td class="py-3.5 px-6 text-right">
+<button class="px-3 py-1.5 bg-amber hover:bg-amber-glow text-white font-semibold rounded text-xs shadow-sm transition-all inline-flex items-center gap-1" type="button">
+<span>Review Redline</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</button>
+</td>
+</tr>
+<!-- Row 2: Kestrel Bio -->
+<tr class="hover:bg-neutral-50/70 transition-colors">
+<td class="py-3.5 px-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-forest"></span>
+<div>
+<div class="font-bold text-parchment-text font-mono text-xs">#2025-DPA-729</div>
+<div class="text-xs text-neutral-700 font-semibold">Kestrel Bio Inc.</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-neutral-700">
+<span class="font-medium">Data Processing Addendum</span>
+<div class="text-[11px] text-parchment-muted">EU GDPR / SCCs</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-block px-2 py-0.5 bg-forest-soft text-forest border border-forest-border rounded font-mono font-bold text-[11px]">
+                    2.1 / 10
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-forest-soft text-forest border border-forest-border">
+<span class="material-symbols-outlined text-xs">check</span>
+                    Autonomous Compromise Drafted
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<p class="font-serif italic text-neutral-800 text-xs">§ 12.1 Standard Contractual Clauses (1.5x Fee Super-Cap)</p>
+<span class="text-[11px] text-parchment-muted font-mono">Model: Delaware-EU Bridge</span>
+</td>
+<td class="py-3.5 px-6 text-right">
+<button class="px-3 py-1.5 bg-parchment-light hover:bg-parchment-subtle text-neutral-800 font-medium border border-parchment-border rounded text-xs transition-all inline-flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-sm text-forest">send</span>
+<span>Send Offer</span>
+</button>
+</td>
+</tr>
+<!-- Row 3: Meridian Logistics -->
+<tr class="hover:bg-neutral-50/70 transition-colors">
+<td class="py-3.5 px-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-amber"></span>
+<div>
+<div class="font-bold text-parchment-text font-mono text-xs">#2025-SLA-902</div>
+<div class="text-xs text-neutral-700 font-semibold">Meridian Logistics Group</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-neutral-700">
+<span class="font-medium">Cloud SLA &amp; Master Terms</span>
+<div class="text-[11px] text-parchment-muted">Multi-region 99.99%</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-block px-2 py-0.5 bg-amber-soft text-amber-glow border border-amber/30 rounded font-mono font-bold text-[11px]">
+                    7.8 / 10
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-soft text-amber-glow border border-amber/30">
+<span class="material-symbols-outlined text-xs">notification_important</span>
+                    Human Escalation Required
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<p class="font-serif italic text-neutral-800 text-xs">§ 14.4 Mutual IP Indemnity (Carve-out dispute)</p>
+<span class="text-[11px] text-parchment-muted font-mono">Assigned to: Elena Rostova</span>
+</td>
+<td class="py-3.5 px-6 text-right">
+<button class="px-3 py-1.5 bg-parchment-light hover:bg-parchment-subtle text-neutral-800 font-medium border border-parchment-border rounded text-xs transition-all inline-flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-sm text-amber">approval</span>
+<span>Authorize</span>
+</button>
+</td>
+</tr>
+<!-- Row 4: Novus Capital -->
+<tr class="hover:bg-neutral-50/70 transition-colors">
+<td class="py-3.5 px-6">
+<div class="flex items-center gap-2">
+<span class="w-2 h-2 rounded-full bg-neutral-400"></span>
+<div>
+<div class="font-bold text-parchment-text font-mono text-xs">#2025-SaaS-611</div>
+<div class="text-xs text-neutral-700 font-semibold">Novus Capital Partners</div>
+</div>
+</div>
+</td>
+<td class="py-3.5 px-4 text-neutral-700">
+<span class="font-medium">Vendor SaaS Terms</span>
+<div class="text-[11px] text-parchment-muted">48-page counterfoil</div>
+</td>
+<td class="py-3.5 px-4 text-center">
+<span class="inline-block px-2 py-0.5 bg-neutral-100 text-neutral-700 border border-neutral-300 rounded font-mono font-bold text-[11px]">
+                    3.5 / 10
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-medium bg-neutral-100 text-neutral-700 border border-neutral-300">
+<span class="material-symbols-outlined text-xs text-neutral-500">sync</span>
+                    Ingestion &amp; Clause Indexing Complete
+                  </span>
+</td>
+<td class="py-3.5 px-4">
+<p class="font-serif italic text-neutral-800 text-xs">84 clauses parsed vs SaaS Playbook v4.8</p>
+<span class="text-[11px] text-parchment-muted font-mono">0 unrepresented liabilities</span>
+</td>
+<td class="py-3.5 px-6 text-right">
+<button class="px-3 py-1.5 bg-parchment-light hover:bg-parchment-subtle text-neutral-800 font-medium border border-parchment-border rounded text-xs transition-all inline-flex items-center gap-1" type="button">
+<span class="material-symbols-outlined text-sm">visibility</span>
+<span>Inspect</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+<div class="px-6 py-2.5 bg-parchment-light border-t border-parchment-border flex items-center justify-between text-xs text-parchment-muted font-mono">
+<span>Showing 4 of 142 total matters on active docket</span>
+<a class="text-amber hover:underline font-semibold flex items-center gap-1" href="#">
+<span>View Full Legal Registry Docket</span>
+<span class="material-symbols-outlined text-sm">arrow_forward</span>
+</a>
+</div>
+</section>
+<!-- TWO-COLUMN TACTICAL WIDGETS ROW: PRECEDENT INTELLIGENCE + TELEMETRY STREAM -->
+<section class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- LEFT (7 COLS): PRECEDENT INTELLIGENCE & CONCESSION MATRIX WIDGET -->
+<div class="lg:col-span-7 bg-parchment-card rounded border border-parchment-border shadow-sm p-6 space-y-4">
+<div class="flex items-center justify-between pb-3 border-b border-parchment-border">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-amber text-xl">analytics</span>
+<div>
+<h3 class="font-display text-base font-bold text-parchment-text">EDGAR Precedent Intelligence &amp; Concession Matrix</h3>
+<p class="text-xs text-parchment-muted">SEC 10-K &amp; Exhibit 10 market benchmark comparison</p>
+</div>
+</div>
+<span class="font-mono text-[11px] bg-amber-soft text-amber-glow px-2 py-0.5 rounded border border-amber/30 font-bold uppercase">4,810 Filings Analyzed</span>
+</div>
+<!-- Scholarly Insight Block with Amber Highlight Rule -->
+<div class="p-4 bg-parchment-light rounded border-l-4 border-amber space-y-2 border border-parchment-border/70">
+<div class="flex items-center justify-between">
+<span class="font-mono text-[11px] font-bold text-amber uppercase tracking-wider">Tactical Compromise Vector — Matter #2025-MSA-409</span>
+<span class="font-mono text-[11px] text-forest font-semibold bg-forest-soft px-1.5 py-0.2 rounded border border-forest-border">94.2% Confidence</span>
+</div>
+<p class="font-serif italic text-neutral-800 text-sm leading-relaxed">
+              “Replacing uncapped breach indemnity in <strong class="text-parchment-text not-italic font-bold font-body">§ 9.2</strong> with a <strong class="text-amber not-italic font-bold font-mono">2x trailing twelve months (TTM) super-cap</strong> with carve-outs solely for willful misconduct results in a <strong class="text-forest not-italic font-bold font-body">78% first-pass acceptance rate</strong> among tier-1 tech counterparties in the Delaware District.”
+            </p>
+<div class="pt-2 border-t border-parchment-border/60 flex items-center justify-between text-[11px] font-mono text-parchment-muted">
+<span>Benchmark: NASDAQ Top 100 SaaS Vendors</span>
+<span class="text-neutral-700 font-semibold">Est. Risk Reduction: $6.4M</span>
+</div>
+</div>
+<!-- Mini Concession Slider Matrix -->
+<div class="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1">
+<div class="p-3 bg-parchment-subtle/50 rounded border border-parchment-border">
+<span class="font-mono text-[10px] uppercase text-neutral-500 font-semibold">Mutual Cap Benchmark</span>
+<div class="text-sm font-bold text-parchment-text font-mono mt-1">1.0x Annual Fees</div>
+<p class="text-[11px] text-parchment-muted mt-0.5">Apex counter-request: Uncapped</p>
+</div>
+<div class="p-3 bg-amber-soft/50 rounded border border-amber/30">
+<span class="font-mono text-[10px] uppercase text-amber-glow font-bold">Recommended Fallback</span>
+<div class="text-sm font-bold text-amber font-mono mt-1">2.0x TTM Aggregate</div>
+<p class="text-[11px] text-neutral-700 mt-0.5">82% favorable compromise</p>
+</div>
+<div class="p-3 bg-parchment-subtle/50 rounded border border-parchment-border">
+<span class="font-mono text-[10px] uppercase text-neutral-500 font-semibold">Strict Hard Stop</span>
+<div class="text-sm font-bold text-rust font-mono mt-1">3.0x TTM Maximum</div>
+<p class="text-[11px] text-parchment-muted mt-0.5">Elena Rostova sign-off req.</p>
+</div>
+</div>
+<div class="flex items-center justify-end gap-2 pt-2">
+<button class="px-3 py-1.5 bg-parchment-card hover:bg-parchment-light border border-parchment-border rounded text-xs font-semibold text-neutral-700 transition-all" type="button">
+              Load SEC Comparison Table
+            </button>
+<button class="px-3.5 py-1.5 bg-amber hover:bg-amber-glow text-white rounded text-xs font-bold shadow-sm transition-all flex items-center gap-1" type="button">
+<span>Insert Fallback Clause into Editor</span>
+<span class="material-symbols-outlined text-sm">edit</span>
+</button>
+</div>
+</div>
+<!-- RIGHT (5 COLS): ACTIVE AI AGENT TELEMETRY STREAM -->
+<div class="lg:col-span-5 bg-ink text-neutral-200 rounded border border-ink-border shadow-sm p-5 flex flex-col justify-between">
+<div class="space-y-3">
+<div class="flex items-center justify-between pb-2.5 border-b border-ink-border">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-amber text-lg">terminal</span>
+<span class="font-mono text-xs font-bold uppercase tracking-wider text-neutral-100">AI Agent Telemetry Stream</span>
+</div>
+<span class="font-mono text-[10px] text-emerald-400 bg-emerald-950/90 px-1.5 py-0.5 rounded border border-emerald-700/60 flex items-center gap-1">
+<span class="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                LIVE 120ms
+              </span>
+</div>
+<!-- Monospace Log Stream -->
+<div class="space-y-2 font-mono text-[11px] custom-scrollbar-dark overflow-y-auto max-h-56 pr-1">
+<div class="p-2 bg-ink-card rounded border border-ink-border/80">
+<div class="flex items-center justify-between text-neutral-400 text-[10px]">
+<span>14:32:08.411 EST</span>
+<span class="text-amber">AGENT_ACTOR_04</span>
+</div>
+<p class="text-neutral-200 mt-1">Ingested inbound Apex Dynamics redline.doc. SHA-256: <span class="text-neutral-400">9f8e...3c12</span></p>
+<p class="text-emerald-400 text-[10px] mt-0.5">✔ 18 altered tokens extracted in § 9.2</p>
+</div>
+<div class="p-2 bg-ink-card rounded border border-ink-border/80">
+<div class="flex items-center justify-between text-neutral-400 text-[10px]">
+<span>14:32:09.023 EST</span>
+<span class="text-amber">RISK_EVAL_KERNEL</span>
+</div>
+<p class="text-neutral-200 mt-1">Deterministic risk engine triggered: uncapped consequential loss flagged.</p>
+<p class="text-rust text-[10px] mt-0.5">▲ Exposure score escalated from 3.2 to 9.4</p>
+</div>
+<div class="p-2 bg-ink-card rounded border border-ink-border/80">
+<div class="flex items-center justify-between text-neutral-400 text-[10px]">
+<span>14:32:11.890 EST</span>
+<span class="text-amber">SYNTHESIS_MODEL</span>
+</div>
+<p class="text-neutral-200 mt-1">Generated 3 compromise variants conforming to Enterprise Playbook v4.8.</p>
+<p class="text-neutral-400 text-[10px] mt-0.5">→ Variant B selected: 2x TTM with gross negligence carve-out</p>
+</div>
+</div>
+</div>
+<!-- Bottom Telemetry Status -->
+<div class="pt-3 mt-3 border-t border-ink-border flex items-center justify-between font-mono text-[11px] text-neutral-400">
+<span class="flex items-center gap-1.5">
+<span class="w-2 h-2 rounded-full bg-forest"></span>
+<span>16 GPU Inference Nodes Healthy</span>
+</span>
+<span class="text-amber font-semibold">Zero Unhandled Exceptions</span>
+</div>
+</div>
+</section>
+</main>
+</div>
+</body></html>
