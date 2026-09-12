@@ -518,11 +518,11 @@ export const PrivateRoom: React.FC = () => {
     }
 
     setIsSubmittingJoin(true);
-    setRejectionNotice(null);
-
     try {
-      const guestName = user?.name || (role === 'seller' ? 'Marcus Vance (Seller)' : 'Elena Rostova (Buyer)');
-      const guestRole = role === 'seller' ? 'seller' : 'buyer';
+      const guestRole: 'seller' | 'buyer' = 'seller';
+      const rawUserName = user?.name || 'Negotiation Demo';
+      const cleanBaseName = rawUserName.replace(/\s*\(buyer\)/i, '').replace(/\s*\(seller\)/i, '').trim();
+      const guestName = `${cleanBaseName} (Seller)`;
 
       const res = await requestJoinPrivateRoom(cleanId, {
         guest_name: guestName,
