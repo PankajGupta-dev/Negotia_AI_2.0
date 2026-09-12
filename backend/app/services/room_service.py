@@ -146,13 +146,32 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
     room = db.query(NegotiationRoomDB).filter(
         (func.upper(NegotiationRoomDB.room_id) == clean_id) | (func.upper(NegotiationRoomDB.id) == clean_id)
     ).first()
-    if room:
-        return room
 
-    # Check MongoDB Atlas fallback (multi-system cross-host synchronization)
+    # Check MongoDB Atlas for multi-system cross-host synchronization (e.g. counterparty knock/join)
     try:
         doc = get_room_from_mongo_sync(clean_id)
         if doc:
+            if room:
+                updated = False
+                if doc.get("guest_status") and doc.get("guest_status") != room.guest_status:
+                    room.guest_status = doc.get("guest_status")
+                    room.guest_id = doc.get("guest_id") or room.guest_id
+                    room.guest_name = doc.get("guest_name") or room.guest_name
+                    room.guest_role = doc.get("guest_role") or room.guest_role
+                    room.guest_token = doc.get("guest_token") or room.guest_token
+                    room.participant_id = doc.get("participant_id") or room.participant_id
+                    updated = True
+                if doc.get("status") and doc.get("status") != room.status:
+                    room.status = doc.get("status")
+                    updated = True
+                if doc.get("active_participants_count") is not None and doc.get("active_participants_count") != room.active_participants_count:
+                    room.active_participants_count = doc.get("active_participants_count")
+                    updated = True
+                if updated:
+                    db.commit()
+                    db.refresh(room)
+                return room
+
             c_at = None
             if doc.get("created_at"):
                 try:
@@ -202,9 +221,9 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
             logger.info(f"[RoomService] Hydrated room '{clean_id}' from MongoDB Atlas to local session.")
             return room
     except Exception as ex:
-        logger.debug(f"[RoomService] Mongo get_room fallback error: {ex}")
+        logger.debug(f"[RoomService] Mongo get_room sync error: {ex}")
 
-    return None
+    return room
 
 
 def request_join(

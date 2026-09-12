@@ -13,6 +13,8 @@ import {
   getMatterDeliberations,
   subscribeToPipelineStream,
   getPrivateRoom,
+  admitParticipant,
+  rejectParticipant,
   closePrivateRoom,
   getNegotiationWebSocketUrl,
   ClauseDetail,
@@ -169,9 +171,44 @@ export const NegotiationWorkspace: React.FC = () => {
   const [matterDetail, setMatterDetail] = useState<MatterDetail | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  const targetMatterId = (id || matterId || '2025-INT-809').trim().toUpperCase();
+
   // Private 2-Party Room State
   const [roomDetail, setRoomDetail] = useState<RoomPublicDetail | null>(null);
   const [isRoomClosed, setIsRoomClosed] = useState<boolean>(false);
+  const [pendingApplicant, setPendingApplicant] = useState<{
+    id?: string;
+    name: string;
+    role: string;
+  } | null>(null);
+  const [isAdmitting, setIsAdmitting] = useState<boolean>(false);
+
+  // Poll room status for instant counterparty knock detection
+  useEffect(() => {
+    if (!targetMatterId.startsWith('NEG-')) return;
+    let timer: any;
+    const fetchRoom = async () => {
+      try {
+        const detail = await getPrivateRoom(targetMatterId);
+        if (detail) {
+          setRoomDetail(detail);
+          if (detail.guest_status === 'pending_approval' && detail.guest_name) {
+            setPendingApplicant({
+              id: detail.participant_id || (detail as any).guest_id,
+              name: detail.guest_name,
+              role: detail.guest_role || 'seller',
+            });
+          } else if (detail.guest_status === 'admitted') {
+            setPendingApplicant(null);
+          }
+        }
+      } catch {}
+    };
+
+    fetchRoom();
+    timer = setInterval(fetchRoom, 2500);
+    return () => clearInterval(timer);
+  }, [targetMatterId]);
 
   // Bilateral WebSocket State (/ws/negotiation/{room_id})
   const [wsConnected, setWsConnected] = useState<boolean>(false);
@@ -188,8 +225,6 @@ export const NegotiationWorkspace: React.FC = () => {
   const [deliberationEvents, setDeliberationEvents] = useState<DeliberationEvent[]>([]);
   const [liveStatus, setLiveStatus] = useState<string>('Analysis complete');
   const [activeAgent, setActiveAgent] = useState<string>('a3');
-
-  const targetMatterId = (id || matterId || '2025-INT-809').trim().toUpperCase();
 
   const [consoleTab, setConsoleTab] = useState<'ai_agents' | 'bilateral_room'>(
     targetMatterId.startsWith('NEG-') ? 'bilateral_room' : 'ai_agents'
@@ -248,6 +283,45 @@ export const NegotiationWorkspace: React.FC = () => {
       } catch (err: any) {
         alert(`Failed to close room: ${err.message || err}`);
       }
+    }
+  };
+
+  const handleAdmitApplicant = async () => {
+    if (!targetMatterId || isAdmitting) return;
+    setIsAdmitting(true);
+    const token =
+      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem('negotia_creator_room_token') ||
+      '';
+    try {
+      await admitParticipant(targetMatterId, pendingApplicant?.id, token);
+      setPresenceNotice({
+        type: 'join',
+        text: `${pendingApplicant?.name || 'Participant'} has been admitted to the chamber!`,
+      });
+      setPendingApplicant(null);
+      const d = await getPrivateRoom(targetMatterId);
+      if (d) setRoomDetail(d);
+    } catch (err: any) {
+      alert(`Failed to admit participant: ${err.message || err}`);
+    } finally {
+      setIsAdmitting(false);
+    }
+  };
+
+  const handleRejectApplicant = async () => {
+    if (!targetMatterId) return;
+    const token =
+      sessionStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem(`room_${targetMatterId}_token`) ||
+      localStorage.getItem('negotia_creator_room_token') ||
+      '';
+    try {
+      await rejectParticipant(targetMatterId, pendingApplicant?.id, token);
+      setPendingApplicant(null);
+    } catch (err: any) {
+      alert(`Failed to reject participant: ${err.message || err}`);
     }
   };
 
@@ -346,6 +420,16 @@ export const NegotiationWorkspace: React.FC = () => {
             setPresenceNotice({
               text: data.reason || 'Negotiation room closed by creator.',
               type: 'closed',
+            });
+          } else if (data.type === 'guest_knock') {
+            setPendingApplicant({
+              id: data.guest_id,
+              name: data.guest_name || 'Counterparty Counsel',
+              role: data.guest_role || 'seller',
+            });
+            setPresenceNotice({
+              text: `${data.guest_name || 'Counterparty'} requested admission to this room.`,
+              type: 'info',
             });
           } else if (
             data.type === 'message' ||
@@ -714,6 +798,46 @@ export const NegotiationWorkspace: React.FC = () => {
               )}
             </div>
           </div>
+
+          {/* Direct Workspace Counterparty Admission Banner */}
+          {pendingApplicant && isCreatorOfRoom && !isRoomClosed && (
+            <div className="w-full p-3.5 bg-gradient-to-r from-amber-950/90 to-amber-900/80 border-2 border-amber-500 rounded-xl flex flex-wrap items-center justify-between gap-3 shadow-lg animate-fade-in">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-full bg-amber-500/20 border border-amber-500/50 flex items-center justify-center shrink-0">
+                  <span className="material-symbols-outlined text-amber-400 text-lg">person_add</span>
+                </div>
+                <div>
+                  <div className="text-[11px] font-mono font-bold text-amber-300 uppercase tracking-wider">
+                    Counterparty Admission Request
+                  </div>
+                  <div className="text-xs text-on-surface">
+                    <strong className="text-white font-bold">{pendingApplicant.name}</strong> ({pendingApplicant.role.toUpperCase()}) entered Room ID <span className="font-mono text-primary font-bold">{targetMatterId}</span> and requested to join.
+                  </div>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="check_circle"
+                  onClick={handleAdmitApplicant}
+                  disabled={isAdmitting}
+                  className="!bg-emerald-600 hover:!bg-emerald-500 !text-white font-bold px-4 py-1.5 shadow-md text-xs"
+                >
+                  {isAdmitting ? 'Admitting...' : 'Admit Participant'}
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  icon="cancel"
+                  onClick={handleRejectApplicant}
+                  className="text-xs hover:!bg-error/20 hover:!text-error"
+                >
+                  Reject
+                </Button>
+              </div>
+            </div>
+          )}
 
           {/* Participant Joined / Left / Room Closed Notice Banner */}
           {presenceNotice && (
