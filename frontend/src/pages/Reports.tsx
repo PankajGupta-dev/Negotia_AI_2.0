@@ -5,7 +5,7 @@ import { FairnessGauge } from '../components/FairnessGauge';
 import { Button } from '../components/Button';
 import { RiskChip } from '../components/RiskChip';
 import { LedgerTable, ColumnDef } from '../components/LedgerTable';
-import { MOCK_CLAUSES, ContractClause } from '../data/mock';
+import { ContractClause } from '../data/mock';
 import {
   getReport,
   submitReview,
@@ -51,7 +51,7 @@ export const Reports: React.FC = () => {
         const isSealed = Boolean(data.isSealed || (data as any).is_sealed);
         setSigned(isSealed);
       } catch (err) {
-        console.warn('Backend report API unavailable, using fallback data:', err);
+        console.warn('Backend report API error:', err);
       }
     }
 
@@ -69,13 +69,11 @@ export const Reports: React.FC = () => {
     try {
       const res = await submitReview(reportOrMatterId, {
         action: 'approve',
-        counselName: 'Elena Rostova',
+        counselName: reportData?.leadCounsel || (reportData as any)?.lead_counsel || 'General Counsel',
         comments: 'Approved by General Counsel following multi-agent convergence.',
       });
 
       setReviewStatus('approved');
-      // CRITICAL CONSTRAINT: The approval button must never directly perform cryptographic sealing on frontend.
-      // The backend controls approval and sealing.
       setSigned(Boolean(res.isSealed || (res as any).is_sealed));
       setActionNotification(res.message || 'Report approved by General Counsel.');
     } catch (err) {
@@ -97,7 +95,7 @@ export const Reports: React.FC = () => {
     try {
       const res = await submitReview(reportOrMatterId, {
         action: 'request_revision',
-        counselName: 'Elena Rostova',
+        counselName: reportData?.leadCounsel || (reportData as any)?.lead_counsel || 'General Counsel',
         comments: 'Counter-revision requested on contested clauses.',
       });
       setActionNotification(res.message || 'Revision requested. Agent 4 re-generating...');
@@ -129,7 +127,7 @@ export const Reports: React.FC = () => {
     try {
       const res = await submitReview(reportOrMatterId, {
         action: 'escalate',
-        counselName: 'Elena Rostova',
+        counselName: reportData?.leadCounsel || (reportData as any)?.lead_counsel || 'General Counsel',
         comments: 'Escalated to General Counsel for senior executive review.',
       });
 
@@ -151,7 +149,7 @@ export const Reports: React.FC = () => {
 
     try {
       const res = await sealReport(reportOrMatterId, {
-        counselName: 'Elena Rostova',
+        counselName: reportData?.leadCounsel || (reportData as any)?.lead_counsel || 'General Counsel',
       });
       const sealed = Boolean(
         res?.isSealed ||
@@ -191,7 +189,7 @@ export const Reports: React.FC = () => {
           rationale: sc.rationale || '',
           secEdgarCitation: sc.secEdgarCitation || sc.sec_edgar_citation || 'SEC EDGAR Benchmark',
         }))
-      : MOCK_CLAUSES;
+      : [];
 
   const reportColumns: ColumnDef<ContractClause>[] = [
     {
@@ -234,19 +232,19 @@ export const Reports: React.FC = () => {
   const executiveSummary =
     reportData?.executiveSummary ||
     (reportData as any)?.executive_summary ||
-    'Following three iterative counterparty redline cycles, Negotia AI has converged with Apex Dynamics outside legal counsel on a mutually approved conformed draft. Key compromises establish a 2.0x ARR liability super-cap for data protection breaches while retaining Net 45 payment terms and sole ownership of pre-existing model architectures.';
+    'Arbiter-3 synthesis pending for this matter.';
 
   const metrics = (reportData as any)?.metrics;
   const turnaroundMinutes =
     metrics?.turnaroundTimeMinutes ||
     metrics?.turnaround_time_minutes ||
     reportData?.counselSavings?.actualAiMinutes ||
-    18;
+    0;
   const savingsAmount =
     metrics?.counselCostSaved ||
     metrics?.counsel_cost_saved ||
     reportData?.counselSavings?.effectiveCostSavingsUsd ||
-    28500;
+    0;
 
   const auditHash =
     reportData?.attestationHash ||
@@ -255,7 +253,16 @@ export const Reports: React.FC = () => {
     (reportData as any)?.audit_digest ||
     (reportData as any)?.blockDigest ||
     (reportData as any)?.block_digest ||
-    '0x8f22e8d9c0919b4412...';
+    '';
+
+  const matterTitle = reportData?.matterTitle || (reportData as any)?.matter_title || 'Enterprise MSA';
+  const counterpartyName = reportData?.counterparty || 'Counterparty Counsel';
+  const leadCounselName =
+    reportData?.leadCounsel ||
+    (reportData as any)?.lead_counsel ||
+    reportData?.sealedBy ||
+    (reportData as any)?.sealed_by ||
+    'Elena Rostova (General Counsel)';
 
   return (
     <div className="w-full bg-surface-container-low px-space-base md:px-space-xl py-space-lg flex justify-center min-h-screen selection:bg-primary-container selection:text-on-surface">
@@ -278,7 +285,7 @@ export const Reports: React.FC = () => {
             </span>
             <span className="text-outline-variant">/</span>
             <span className="text-on-surface-variant truncate">
-              APEX DYNAMICS CORP. × VELOCE SYSTEMS INC.
+              {matterTitle} × {counterpartyName}
             </span>
           </div>
           <div className="flex items-center gap-space-md shrink-0">
@@ -309,7 +316,7 @@ export const Reports: React.FC = () => {
                 Executive Negotiation Report
               </h1>
               <p className="font-headline-md text-base text-primary font-serif italic">
-                Matter #{reportData?.matterId || (reportData as any)?.matter_id || reportOrMatterId} · Enterprise Master Services Agreement
+                Matter #{reportData?.matterId || (reportData as any)?.matter_id || reportOrMatterId} · {matterTitle}
               </p>
             </div>
 
@@ -324,14 +331,16 @@ export const Reports: React.FC = () => {
                         day: 'numeric',
                         year: 'numeric',
                       })
-                    : 'October 24, 2025 · 16:40 EST'}
+                    : new Date().toLocaleDateString('en-US', {
+                        month: 'long',
+                        day: 'numeric',
+                        year: 'numeric',
+                      })}
                 </span>
               </div>
               <div>
                 <span className="uppercase text-on-surface font-semibold">Lead Counsel: </span>
-                <span>
-                  {reportData?.sealedBy || (reportData as any)?.sealed_by || 'Elena Rostova (General Counsel)'}
-                </span>
+                <span>{leadCounselName}</span>
               </div>
               <div className="flex items-center gap-1.5 pt-1">
                 <span className="bg-secondary-container/30 text-secondary border border-secondary/30 px-1.5 py-0.5 rounded text-[10px] uppercase font-bold">
@@ -512,7 +521,7 @@ export const Reports: React.FC = () => {
                   <span className="material-symbols-outlined text-[16px] text-error">
                     warning
                   </span>
-                  ESCALATED TO HUMAN COUNSEL — Elena Rostova notified
+                  ESCALATED TO HUMAN COUNSEL — {leadCounselName} notified
                 </span>
               )}
             </div>
@@ -585,10 +594,10 @@ export const Reports: React.FC = () => {
                   Lead Counsel Attestation:
                 </span>
                 <div className="font-serif italic text-xl text-on-surface h-10 flex items-center">
-                  {signed ? 'Elena Rostova, General Counsel' : 'Awaiting Sign-off'}
+                  {signed ? leadCounselName : 'Awaiting Sign-off'}
                 </div>
                 <div className="text-xs font-mono text-outline pt-1 border-t border-outline-variant/20 flex justify-between">
-                  <span>Timestamp: Oct 24, 2025 16:42:19 EST</span>
+                  <span>Timestamp: {reportData?.updatedAt ? new Date(reportData.updatedAt).toLocaleString() : 'Pending Sign-off'}</span>
                   <span>MFA: YubiKey 5C</span>
                 </div>
               </div>

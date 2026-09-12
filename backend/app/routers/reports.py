@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 
 from app.db import get_db
 from app.db.models import (
+    AgentRunDB,
     AgentVerdictDB,
     AuditRecordDB,
     ContractClauseDB,
@@ -90,6 +91,9 @@ class ReportDetailResponse(BaseModel):
     audit_digest: Optional[str] = Field(None, serialization_alias="auditDigest")
     is_sealed: bool = Field(default=False, serialization_alias="isSealed")
     eligible_for_sealing: bool = Field(default=False, serialization_alias="eligibleForSealing")
+    matter_title: Optional[str] = Field(None, serialization_alias="matterTitle")
+    counterparty: Optional[str] = Field(None, serialization_alias="counterparty")
+    lead_counsel: Optional[str] = Field(None, serialization_alias="leadCounsel")
     fairness_index: float = Field(default=94.0, serialization_alias="fairnessIndex")
     leverage_score: float = Field(default=6.8, serialization_alias="leverageScore")
     counterparty_acceptance_pct: float = Field(default=91.5, serialization_alias="counterpartyAcceptancePct")
@@ -267,6 +271,25 @@ def get_report(
             )
 
     matter_id = report.matter_id
+    matter_obj = db.query(MatterDB).filter(MatterDB.id == matter_id).first()
+    matter_title = matter_obj.title if (matter_obj and matter_obj.title) else "Enterprise Master Services Agreement"
+    counterparty_name = matter_obj.counterparty if (matter_obj and matter_obj.counterparty) else "Counterparty Counsel"
+    lead_counsel_name = matter_obj.lead_counsel if (matter_obj and matter_obj.lead_counsel) else "Elena Rostova (General Counsel)"
+
+    # Fetch real Agent 3 (Arbiter-3) run results from database
+    a3_run = (
+        db.query(AgentRunDB)
+        .filter(AgentRunDB.matter_id == matter_id, AgentRunDB.agent_id == "a3")
+        .order_by(AgentRunDB.id.desc())
+        .first()
+    )
+    a3_result = a3_run.result if (a3_run and isinstance(a3_run.result, dict)) else {}
+
+    exec_summary = (
+        a3_result.get("executive_summary")
+        or report.executive_summary
+        or f"Following multi-agent bilateral deliberation, Arbiter-3 has converged on matter '{matter_title}' with counterparty {counterparty_name} to produce a conformed baseline."
+    )
 
     # 1. Fetch settled clauses for this matter
     clauses: List[ContractClauseDB] = (
@@ -419,8 +442,13 @@ def get_report(
         "matter_id": matter_id,
         "docketNumber": report.docket_number,
         "docket_number": report.docket_number,
-        "executiveSummary": report.executive_summary,
-        "executive_summary": report.executive_summary,
+        "matterTitle": matter_title,
+        "matter_title": matter_title,
+        "counterparty": counterparty_name,
+        "leadCounsel": lead_counsel_name,
+        "lead_counsel": lead_counsel_name,
+        "executiveSummary": exec_summary,
+        "executive_summary": exec_summary,
         "settledClauses": settled_clauses_data,
         "settled_clauses": settled_clauses_data,
         "verdicts": verdicts_data,

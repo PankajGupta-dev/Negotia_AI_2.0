@@ -337,6 +337,11 @@ export interface ReportResponse {
   matter_id?: string;
   docketNumber: string;
   docket_number?: string;
+  matterTitle?: string;
+  matter_title?: string;
+  counterparty?: string;
+  leadCounsel?: string;
+  lead_counsel?: string;
   executiveSummary: string;
   executive_summary?: string;
   keyNegotiatedChanges: KeyNegotiatedChange[];
