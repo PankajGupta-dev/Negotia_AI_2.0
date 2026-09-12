@@ -1385,9 +1385,25 @@ export const NegotiationWorkspace: React.FC = () => {
                       const isA3 = agentKey === 'a3';
                       const isOrchestrator = agentKey === 'orchestrator' || evt.role === 'review_boundary';
 
-                      const formattedTime = evt.timestamp
-                        ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
-                        : '';
+                      const formattedTime = (() => {
+                        if (!evt.timestamp) return '';
+                        try {
+                          let tsStr = String(evt.timestamp);
+                          if (
+                            tsStr.includes('T') &&
+                            !tsStr.endsWith('Z') &&
+                            !tsStr.includes('+') &&
+                            !tsStr.slice(10).includes('-')
+                          ) {
+                            tsStr += 'Z';
+                          }
+                          const d = new Date(tsStr);
+                          if (isNaN(d.getTime())) return String(evt.timestamp);
+                          return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+                        } catch {
+                          return String(evt.timestamp);
+                        }
+                      })();
 
                       return (
                         <article
@@ -1539,204 +1555,8 @@ export const NegotiationWorkspace: React.FC = () => {
                     AI agents generate compromises based on matter files. General Counsel sign-off is required.
                   </p>
                 </div>
-<<<<<<< Updated upstream
-              ) : (
-                deliberationEvents.map((evt, idx) => {
-                  const agentKey = (evt.agent || 'a1').toLowerCase();
-                  const isA1 = agentKey === 'a1';
-                  const isA2 = agentKey === 'a2';
-                  const isA3 = agentKey === 'a3';
-                  const isOrchestrator = agentKey === 'orchestrator' || evt.role === 'review_boundary';
-
-                  const formattedTime = (() => {
-                    if (!evt.timestamp) return '';
-                    try {
-                      let tsStr = String(evt.timestamp);
-                      if (
-                        tsStr.includes('T') &&
-                        !tsStr.endsWith('Z') &&
-                        !tsStr.includes('+') &&
-                        !tsStr.slice(10).includes('-')
-                      ) {
-                        tsStr += 'Z';
-                      }
-                      const d = new Date(tsStr);
-                      if (isNaN(d.getTime())) return String(evt.timestamp);
-                      return d.toLocaleTimeString('en-IN', {
-                        timeZone: 'Asia/Kolkata',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: true,
-                      }) + ' IST';
-                    } catch {
-                      return String(evt.timestamp);
-                    }
-                  })();
-
-                  return (
-                    <article
-                      key={evt.eventId || evt.event_id || `delib-${idx}`}
-                      className={`p-3 rounded border text-xs leading-relaxed space-y-2 transition-all ${
-                        isA1
-                          ? 'bg-blue-500/5 border-blue-500/20 text-on-surface'
-                          : isA2
-                          ? 'bg-amber-500/5 border-amber-500/20 text-on-surface'
-                          : isA3
-                          ? 'bg-emerald-500/5 border-emerald-500/30 text-on-surface shadow-xs'
-                          : 'bg-surface-container-high/40 border-amber-500/40 text-on-surface'
-                      }`}
-                    >
-                      {/* Agent Header Line */}
-                      <div className="flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/10">
-                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold">
-                          <span
-                            className={`w-2 h-2 rounded-full ${
-                              isA1
-                                ? 'bg-blue-400'
-                                : isA2
-                                ? 'bg-amber-400'
-                                : isA3
-                                ? 'bg-emerald-400'
-                                : 'bg-amber-500'
-                            }`}
-                          />
-                          <span
-                            className={
-                              isA1
-                                ? 'text-blue-400'
-                                : isA2
-                                ? 'text-amber-400'
-                                : isA3
-                                ? 'text-emerald-400'
-                                : 'text-amber-500'
-                            }
-                          >
-                            {evt.agentName || evt.agent_name || (isA1 ? 'Lex-Ingestor A' : isA2 ? 'Lex-Ingestor B' : isA3 ? 'Arbiter-3' : 'System Orchestrator')}
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-1.5 font-mono text-[10px] text-outline">
-                          {evt.source && (
-                            <span className="px-1 py-0.2 bg-surface-container-high rounded text-[9px] font-semibold text-outline">
-                              {evt.source}
-                            </span>
-                          )}
-                          <span>{formattedTime}</span>
-                        </div>
-                      </div>
-
-                      {/* Main Deliberation Summary Message */}
-                      <p className="font-body-sm text-xs font-normal text-on-surface text-balance">
-                        {evt.message}
-                      </p>
-
-                      {/* Evidence / Clause Reference Chips */}
-                      {(evt.clauseIds?.length || evt.clause_ids?.length) ? (
-                        <div className="flex flex-wrap items-center gap-1 pt-1">
-                          <span className="font-mono text-[10px] text-outline font-semibold">
-                            Evidence:
-                          </span>
-                          {(evt.clauseIds || evt.clause_ids || []).map((cid) => (
-                            <button
-                              key={cid}
-                              type="button"
-                              onClick={() => handleClauseClick(cid)}
-                              className="font-mono text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded border border-primary/30 transition-colors flex items-center gap-1"
-                              title="Click to view clause in workspace"
-                            >
-                              <span className="material-symbols-outlined text-[10px]">link</span>
-                              <span>{cid}</span>
-                            </button>
-                          ))}
-                        </div>
-                      ) : null}
-
-                      {/* Agent 2 Risk Chip */}
-                      {(typeof evt.riskScore === 'number' || typeof evt.risk_score === 'number') && (
-                        <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/30 rounded font-mono text-[10px] font-bold">
-                          <span>Risk: {(evt.riskScore ?? evt.risk_score)?.toFixed(1)}/10</span>
-                        </div>
-                      )}
-
-                      {/* Agent 3 Structured Dual-Lens Analysis */}
-                      {isA3 && (
-                        <div className="space-y-1.5 pt-1 border-t border-outline-variant/15 font-body-sm text-[11px]">
-                          {(evt.legalImpact || evt.legal_impact) && (
-                            <div className="p-1.5 bg-red-500/5 border border-red-500/20 rounded space-y-0.5">
-                              <span className="font-mono text-[10px] font-bold text-red-400 flex items-center gap-1 uppercase">
-                                <span className="material-symbols-outlined text-[12px]">gavel</span>
-                                Legal Exposure
-                              </span>
-                              <p className="text-on-surface-variant text-[11px]">
-                                {evt.legalImpact || evt.legal_impact}
-                              </p>
-                            </div>
-                          )}
-
-                          {(evt.commercialImpact || evt.commercial_impact) && (
-                            <div className="p-1.5 bg-emerald-500/5 border border-emerald-500/20 rounded space-y-0.5">
-                              <span className="font-mono text-[10px] font-bold text-emerald-400 flex items-center gap-1 uppercase">
-                                <span className="material-symbols-outlined text-[12px]">trending_up</span>
-                                Commercial Impact
-                              </span>
-                              <p className="text-on-surface-variant text-[11px]">
-                                {evt.commercialImpact || evt.commercial_impact}
-                              </p>
-                            </div>
-                          )}
-
-                          {evt.recommendation && (
-                            <div className="p-1.5 bg-amber-500/10 border border-amber-500/30 rounded space-y-0.5">
-                              <span className="font-mono text-[10px] font-bold text-amber-500 flex items-center gap-1 uppercase">
-                                <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
-                                Recommended Compromise
-                              </span>
-                              <p className="text-on-surface font-medium text-[11px]">
-                                {evt.recommendation}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      {/* Orchestrator Review Boundary Card */}
-                      {isOrchestrator && (
-                        <div className="p-2 bg-amber-500/15 border border-amber-500/40 rounded space-y-1">
-                          <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-amber-400 uppercase">
-                            <span className="material-symbols-outlined text-sm">verified_user</span>
-                            <span>STATUS: PENDING HUMAN REVIEW</span>
-                          </div>
-                          <p className="font-body-sm text-[11px] text-on-surface-variant">
-                            Deliberation complete. Recommendations staged. General Counsel review required before execution.
-                          </p>
-                        </div>
-                      )}
-                    </article>
-                  );
-                })
-              )}
-            </div>
-
-            {/* Bottom Human Review Boundary Footer Banner */}
-            <div className="p-2.5 bg-surface-container-low border border-amber-500/30 rounded text-xs space-y-1 shrink-0">
-              <div className="flex items-center justify-between font-mono text-[11px] font-bold text-amber-500">
-                <span className="flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs">gavel</span>
-                  HUMAN REVIEW BOUNDARY
-                </span>
-                <span className="bg-amber-500/20 px-1.5 py-0.5 rounded text-[9px] uppercase">
-                  UNSEALED
-                </span>
-              </div>
-              <p className="font-body-sm text-[10px] text-on-surface-variant leading-tight">
-                AI agents generate compromises based on matter files. General Counsel sign-off is required.
-              </p>
-            </div>
-=======
               </>
             )}
->>>>>>> Stashed changes
           </div>
 
           {/* Action Bottom Cluster */}
