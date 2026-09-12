@@ -665,6 +665,49 @@ export const AgentPipeline: React.FC = () => {
 
             return (
               <React.Fragment key={agent.id}>
+                {/* Human Verification Block before Agent 04 execution */}
+                {idx === 3 && (
+                  <div className="w-full bg-surface-container-lowest border-2 border-[#D97706] rounded-lg p-space-md shadow-lg space-y-3 transition-all">
+                    <div className="flex flex-wrap items-center justify-between gap-3 border-b border-outline-variant/20 pb-3">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-10 rounded-lg bg-[#FEF3C7] text-[#92400E] border border-[#D97706]/40 flex items-center justify-center">
+                          <span className="material-symbols-outlined text-2xl">verified_user</span>
+                        </div>
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className="font-mono text-xs font-bold px-2 py-0.5 bg-[#FEF3C7] text-[#92400E] border border-[#D97706]/50 rounded uppercase tracking-wider">
+                              HUMAN VERIFICATION GATE
+                            </span>
+                            <h3 className="font-headline-md text-base md:text-lg font-bold text-on-surface">
+                              Mandatory General Counsel Review & Approval
+                            </h3>
+                          </div>
+                          <p className="font-body-md text-xs text-on-surface-variant mt-0.5">
+                            Deliberation paused for human verification prior to Scrivener-4 executive brief compilation & sealing.
+                          </p>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span className="px-3 py-1 bg-[#FEF3C7] border-2 border-[#D97706] text-[#92400E] rounded-md font-mono text-xs font-extrabold uppercase tracking-wider flex items-center gap-1.5 shadow-sm animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-[#D97706] animate-ping" />
+                          STATUS: PENDING REVIEW
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-wrap items-center justify-between gap-2 text-xs font-mono text-on-surface-variant bg-surface-container-high/50 p-2.5 rounded border border-outline-variant/20">
+                      <span className="flex items-center gap-1.5 text-on-surface">
+                        <span className="material-symbols-outlined text-sm text-[#D97706]">gavel</span>
+                        Verification Checkpoint: <strong>Pre-Execution Human Gate Active</strong>
+                      </span>
+                      <span className="text-[#D97706] font-bold">
+                        STATUS: PENDING REVIEW — Awaiting General Counsel Sign-Off
+                      </span>
+                    </div>
+                  </div>
+                )}
+
                 {/* Agent Card */}
                 <div
                   className={`w-full bg-surface-container-lowest rounded-lg border transition-all duration-300 p-space-md shadow-md ${
@@ -723,24 +766,30 @@ export const AgentPipeline: React.FC = () => {
 
                       {/* Status indicator */}
                       <div className="flex items-center gap-2 mt-1">
-                        {status === 'idle' && (
+                        {status === 'idle' && idx !== 3 && (
                           <span className="flex items-center gap-1.5 font-mono text-[11px] text-on-surface-variant">
                             <span className="w-2 h-2 rounded-full bg-outline-variant" />
                             STANDBY
                           </span>
                         )}
-                        {status === 'running' && (
+                        {status === 'running' && idx !== 3 && (
                           <span className="flex items-center gap-1.5 font-mono text-[11px] text-primary font-bold">
                             <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
                             DELIBERATING...
                           </span>
                         )}
-                        {status === 'complete' && (
+                        {status === 'complete' && idx !== 3 && (
                           <span className="flex items-center gap-1.5 font-mono text-[11px] text-secondary font-bold">
                             <span className="material-symbols-outlined text-[16px] text-secondary">
                               check_circle
                             </span>
                             ANALYSIS COMPLETE
+                          </span>
+                        )}
+                        {idx === 3 && (
+                          <span className="flex items-center gap-1.5 font-mono text-[11px] text-[#D97706] font-extrabold px-2 py-0.5 bg-[#FEF3C7] border border-[#D97706]/60 rounded shadow-sm animate-pulse">
+                            <span className="w-2 h-2 rounded-full bg-[#D97706] animate-ping" />
+                            STATUS: PENDING REVIEW
                           </span>
                         )}
                         {status === 'error' && (
@@ -763,20 +812,39 @@ export const AgentPipeline: React.FC = () => {
                         [Waiting for previous agent verification...]
                       </span>
                     ) : (
-                      lines.map((ln, lIdx) => (
-                        <div key={lIdx} className="flex items-start gap-2 text-on-surface/90">
-                          <span className="text-primary font-bold select-none">{'>'}</span>
-                          <span
-                            className={
-                              lIdx === lines.length - 1 && status === 'running'
-                                ? 'text-primary font-bold'
-                                : ''
-                            }
-                          >
-                            {ln}
-                          </span>
-                        </div>
-                      ))
+                      lines.map((ln, lIdx) => {
+                        const hasPendingReview = /Status:\s*PENDING_REVIEW|PENDING_REVIEW|PENDING REVIEW/i.test(ln);
+                        return (
+                          <div key={lIdx} className="flex items-start gap-2 text-on-surface/90">
+                            <span className="text-primary font-bold select-none">{'>'}</span>
+                            <span
+                              className={
+                                lIdx === lines.length - 1 && status === 'running'
+                                  ? 'text-primary font-bold'
+                                  : ''
+                              }
+                            >
+                              {hasPendingReview ? (
+                                <span>
+                                  {ln.split(/Status:\s*PENDING_REVIEW|PENDING_REVIEW|Status:\s*PENDING REVIEW/i).map((part, pIdx, arr) => (
+                                    <React.Fragment key={pIdx}>
+                                      {part}
+                                      {pIdx < arr.length - 1 && (
+                                        <span className="mx-1 px-2 py-0.5 bg-[#F59E0B] text-black font-extrabold rounded shadow-sm uppercase tracking-wider inline-flex items-center gap-1 border border-black/30">
+                                          <span className="w-1.5 h-1.5 rounded-full bg-black animate-ping" />
+                                          STATUS: PENDING REVIEW
+                                        </span>
+                                      )}
+                                    </React.Fragment>
+                                  ))}
+                                </span>
+                              ) : (
+                                ln
+                              )}
+                            </span>
+                          </div>
+                        );
+                      })
                     )}
                   </div>
                 </div>

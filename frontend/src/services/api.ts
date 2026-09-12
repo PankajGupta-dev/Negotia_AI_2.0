@@ -533,13 +533,31 @@ export async function verifyAuditChain(
 // ═════════════════════════════════════════════════════════════════════════════
 
 export interface PipelineStreamEvent {
-  eventType: 'agent_update' | 'merge_status' | 'pipeline_complete' | 'pipeline_error' | string;
-  matterId: string;
-  agent: string;
-  status: string;
+  eventType?: 'agent_update' | 'deliberation' | 'merge_status' | 'pipeline_complete' | 'pipeline_error' | string;
+  event?: string;
+  event_type?: string;
+  matterId?: string;
+  matter_id?: string;
+  agent?: string;
+  agentName?: string;
+  agent_name?: string;
+  role?: string;
+  status?: string;
   thought?: string;
   message?: string;
-  timestamp: string;
+  timestamp?: string;
+  clauseIds?: string[];
+  clause_ids?: string[];
+  riskScore?: number;
+  risk_score?: number;
+  legalImpact?: string;
+  legal_impact?: string;
+  commercialImpact?: string;
+  commercial_impact?: string;
+  recommendation?: string;
+  eventId?: string;
+  event_id?: string;
+  source?: 'LLM' | 'FALLBACK' | string;
   payload?: Record<string, any>;
 }
 
@@ -652,6 +670,37 @@ export async function resumeNegotiation(matterId: string): Promise<{
   });
 }
 
+export interface DeliberationEvent {
+  eventId?: string;
+  event_id?: string;
+  matterId: string;
+  matter_id?: string;
+  agent: 'a1' | 'a2' | 'a3' | 'orchestrator' | string;
+  agentName?: string;
+  agent_name?: string;
+  role: string;
+  message: string;
+  clauseIds?: string[];
+  clause_ids?: string[];
+  riskScore?: number;
+  risk_score?: number;
+  legalImpact?: string;
+  legal_impact?: string;
+  commercialImpact?: string;
+  commercial_impact?: string;
+  recommendation?: string;
+  timestamp: string;
+  status?: string;
+  source?: 'LLM' | 'FALLBACK' | string;
+}
+
+/**
+ * Fetch persisted real-time agent deliberations for a matter.
+ */
+export async function getMatterDeliberations(matterId: string): Promise<DeliberationEvent[]> {
+  return request<DeliberationEvent[]>(`/api/matters/${encodeURIComponent(matterId)}/deliberations`);
+}
+
 // Default export consolidating all endpoints
 const api = {
   ingestContracts,
@@ -667,6 +716,7 @@ const api = {
   subscribeToPipelineStream,
   getMatterCheckpoint,
   resumeNegotiation,
+  getMatterDeliberations,
 };
 
 export default api;

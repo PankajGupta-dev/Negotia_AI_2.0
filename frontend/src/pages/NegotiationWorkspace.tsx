@@ -3,14 +3,17 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { RiskChip } from '../components/RiskChip';
 import { Button } from '../components/Button';
-import { AgentCard } from '../components/AgentCard';
 import { MOCK_CLAUSES, ContractClause } from '../data/mock';
+import { useIntake } from '../context/IntakeContext';
 import {
   getMatterClauses,
   conformClause,
   getMatter,
+  getMatterDeliberations,
+  subscribeToPipelineStream,
   ClauseDetail,
   MatterDetail,
+  DeliberationEvent,
 } from '../services/api';
 
 type WorkspaceClause = Omit<ContractClause, 'status'> & Partial<ClauseDetail> & {
@@ -67,6 +70,7 @@ const normalizeClause = (raw: ClauseDetail | ContractClause): WorkspaceClause =>
 export const NegotiationWorkspace: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { docAFile, docBFile, matterTitle, counterparty, matterId } = useIntake();
 
   const initialClauses = MOCK_CLAUSES.map(normalizeClause);
   const [clauses, setClauses] = useState<WorkspaceClause[]>(initialClauses);
@@ -76,16 +80,22 @@ export const NegotiationWorkspace: React.FC = () => {
   const [matterDetail, setMatterDetail] = useState<MatterDetail | null>(null);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  const targetMatterId = id || '2025-INT-809';
+  // Real-time Deliberation Console State
+  const [deliberationEvents, setDeliberationEvents] = useState<DeliberationEvent[]>([]);
+  const [liveStatus, setLiveStatus] = useState<string>('Analysis complete');
+  const [activeAgent, setActiveAgent] = useState<string>('a3');
+
+  const targetMatterId = id || matterId || '2025-INT-809';
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadWorkspaceData() {
       try {
-        const [clausesResult, matterResult] = await Promise.allSettled([
+        const [clausesResult, matterResult, delibResult] = await Promise.allSettled([
           getMatterClauses(targetMatterId),
           getMatter(targetMatterId),
+          getMatterDeliberations(targetMatterId),
         ]);
 
         if (!isMounted) return;
@@ -100,16 +110,77 @@ export const NegotiationWorkspace: React.FC = () => {
 
         if (matterResult.status === 'fulfilled' && matterResult.value) {
           setMatterDetail(matterResult.value);
+          if (matterResult.value.status === 'pending_review' || matterResult.value.stage?.includes('Pending')) {
+            setLiveStatus('PENDING HUMAN REVIEW');
+          }
+        }
+
+        if (delibResult.status === 'fulfilled' && Array.isArray(delibResult.value) && delibResult.value.length > 0) {
+          setDeliberationEvents(delibResult.value);
         }
       } catch (err) {
-        console.warn('Backend API unavailable for negotiation workspace, falling back to mock data:', err);
+        console.warn('Backend API unavailable for negotiation workspace, using fallback:', err);
       }
     }
 
     loadWorkspaceData();
 
+    // Subscribe to real-time progressive deliberation events via SSE
+    const unsubscribe = subscribeToPipelineStream(targetMatterId, (evt) => {
+      if (!isMounted) return;
+
+      const evType = (evt.event || evt.event_type || '').toLowerCase();
+
+      if (evType === 'deliberation' || evt.agentName || evt.agent_name) {
+        const delibEv: DeliberationEvent = {
+          eventId: evt.eventId || evt.event_id || `ev_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+          matterId: evt.matterId || evt.matter_id || targetMatterId,
+          agent: evt.agent || 'a1',
+          agentName: evt.agentName || evt.agent_name || (evt.agent === 'a1' ? 'Lex-Ingestor A' : evt.agent === 'a2' ? 'Lex-Ingestor B' : 'Arbiter-3'),
+          role: evt.role || 'deliberation',
+          message: evt.message || '',
+          clauseIds: evt.clauseIds || evt.clause_ids || [],
+          riskScore: evt.riskScore ?? evt.risk_score,
+          legalImpact: evt.legalImpact || evt.legal_impact,
+          commercialImpact: evt.commercialImpact || evt.commercial_impact,
+          recommendation: evt.recommendation,
+          timestamp: evt.timestamp || new Date().toISOString(),
+          status: evt.status || 'complete',
+          source: evt.source || 'LLM',
+        };
+
+        setDeliberationEvents((prev) => {
+          const key = delibEv.eventId || `${delibEv.agent}_${delibEv.timestamp}_${delibEv.message.substring(0, 20)}`;
+          if (prev.some((e) => (e.eventId || `${e.agent}_${e.timestamp}_${e.message.substring(0, 20)}`) === key)) {
+            return prev;
+          }
+          return [...prev, delibEv];
+        });
+
+        if (delibEv.agent) {
+          setActiveAgent(delibEv.agent);
+        }
+      }
+
+      if (evType === 'agent_update' || evType === 'merge_status') {
+        if (evt.agent) setActiveAgent(evt.agent);
+        if (evt.message) {
+          if (evt.agent === 'a1') setLiveStatus('Agent 1 analyzing baseline...');
+          else if (evt.agent === 'a2') setLiveStatus('Agent 2 comparing counterparty markup...');
+          else if (evt.agent === 'a3') setLiveStatus('Arbiter-3 evaluating trade-offs...');
+          else setLiveStatus(evt.message);
+        }
+      }
+
+      if (evType === 'pipeline_complete' || evt.status === 'pending_review') {
+        setLiveStatus('PENDING HUMAN REVIEW');
+        setActiveAgent('orchestrator');
+      }
+    });
+
     return () => {
       isMounted = false;
+      if (typeof unsubscribe === 'function') unsubscribe();
     };
   }, [id, targetMatterId]);
 
@@ -150,6 +221,20 @@ export const NegotiationWorkspace: React.FC = () => {
     }
   };
 
+  const handleClauseClick = (cid: string) => {
+    const matched = clauses.find(
+      (c) =>
+        c.id === cid ||
+        c.clauseId === cid ||
+        c.section.toLowerCase().includes(cid.toLowerCase()) ||
+        cid.toLowerCase().includes(c.section.toLowerCase().replace(/[^\d.]/g, '')) ||
+        c.id.endsWith(cid)
+    );
+    if (matched) {
+      setSelectedClauseId(matched.id);
+    }
+  };
+
   return (
     <div className="w-full flex flex-col min-h-screen bg-background text-on-surface select-none">
       {/* 1. TOP DOCKET STRIP */}
@@ -157,16 +242,16 @@ export const NegotiationWorkspace: React.FC = () => {
         <div className="flex items-center gap-space-md flex-wrap min-w-0">
           <div className="flex items-center gap-2">
             <span className="px-2 py-0.5 bg-primary-container/20 text-primary font-mono text-label-sm uppercase tracking-wider font-semibold rounded-sm border border-primary/30">
-              {matterDetail?.docketNumber || id || 'Docket #2025-INT-809'}
+              {matterDetail?.docketNumber || (targetMatterId ? `Docket #${targetMatterId}` : 'Docket #2025-INT-809')}
             </span>
             <span className="font-headline-md text-base md:text-lg text-on-surface font-semibold">
-              {matterDetail?.title || 'Master Services Agreement'}
+              {matterDetail?.title || matterTitle || 'Master Services Agreement'}
             </span>
           </div>
           <div className="flex items-center gap-2 text-on-surface-variant font-body-sm text-xs">
             <span className="text-outline-variant">•</span>
             <span className="font-semibold text-on-surface">
-              {matterDetail?.counterparty || 'Apex Dynamics Corp.'}
+              {matterDetail?.counterparty || counterparty || 'Apex Dynamics Corp.'}
             </span>
             <span className="text-primary font-mono">⇄</span>
             <span className="font-semibold text-on-surface">Veloce Systems Inc.</span>
@@ -207,37 +292,43 @@ export const NegotiationWorkspace: React.FC = () => {
       <section className="w-full bg-surface-container-lowest border-b border-outline-variant/20 px-space-base py-2 flex flex-wrap items-center justify-between gap-2 shadow-xs">
         <div className="flex items-center gap-2 overflow-x-auto w-full md:w-auto">
           {/* A1 */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low rounded border border-outline-variant/20 font-mono text-[11px] shrink-0">
-            <span className="w-2 h-2 rounded-full bg-secondary" />
-            <span className="font-bold text-on-surface">Agent 1</span>
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a1' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${activeAgent === 'a1' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
+            <span className="font-bold">Agent 1</span>
             <span className="text-outline-variant">•</span>
-            <span className="text-on-surface-variant font-semibold">Buyer Legal Analyst</span>
+            <span className="font-semibold">Buyer Legal Analyst</span>
             <span className="text-outline-variant">•</span>
-            <span className="text-secondary font-semibold">COMPLETE</span>
+            <span className="font-semibold">{activeAgent === 'a1' ? 'RUNNING' : 'COMPLETE'}</span>
           </div>
 
           <span className="text-outline-variant text-xs">|</span>
 
           {/* A2 */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-surface-container-low rounded border border-outline-variant/20 font-mono text-[11px] shrink-0">
-            <span className="w-2 h-2 rounded-full bg-secondary" />
-            <span className="font-bold text-on-surface">Agent 2</span>
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a2' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${activeAgent === 'a2' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
+            <span className="font-bold">Agent 2</span>
             <span className="text-outline-variant">•</span>
-            <span className="text-on-surface-variant font-semibold">Seller Redline Auditor</span>
+            <span className="font-semibold">Seller Redline Auditor</span>
             <span className="text-outline-variant">•</span>
-            <span className="text-secondary font-semibold">COMPLETE</span>
+            <span className="font-semibold">{activeAgent === 'a2' ? 'RUNNING' : 'COMPLETE'}</span>
           </div>
 
           <span className="text-outline-variant text-xs">|</span>
 
           {/* A3 */}
-          <div className="flex items-center gap-1.5 px-2.5 py-1 bg-primary-container/20 border border-primary/40 rounded font-mono text-[11px] shrink-0">
-            <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
-            <span className="font-bold text-primary">Agent 3</span>
-            <span className="text-primary/40">•</span>
-            <span className="text-on-surface font-bold">AI Judge & Mediator</span>
-            <span className="text-primary/40">•</span>
-            <span className="text-primary font-bold">ACTIVE</span>
+          <div className={`flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono text-[11px] shrink-0 ${
+            activeAgent === 'a3' || activeAgent === 'orchestrator' ? 'bg-primary-container/20 border-primary/40 text-primary font-bold' : 'bg-surface-container-low border-outline-variant/20'
+          }`}>
+            <span className={`w-2 h-2 rounded-full ${activeAgent === 'a3' ? 'bg-primary animate-pulse' : 'bg-secondary'}`} />
+            <span className="font-bold">Agent 3</span>
+            <span className="text-outline-variant">•</span>
+            <span className="font-bold">AI Judge & Mediator</span>
+            <span className="text-outline-variant">•</span>
+            <span className="font-bold">{activeAgent === 'a3' ? 'ACTIVE' : 'COMPLETE'}</span>
           </div>
 
           <span className="text-outline-variant text-xs">|</span>
@@ -406,11 +497,29 @@ export const NegotiationWorkspace: React.FC = () => {
             {/* TAB CONTENT: REDLINE COMPARISON */}
             {activeTab === 'redline' && (
               <div className="space-y-space-md">
+                {/* Uploaded File Pair Source Badge */}
+                {(docAFile || docBFile) && (
+                  <div className="p-2 bg-[#EDE7DC] border border-[#D6CEBE] rounded flex items-center justify-between font-mono text-[11px] text-[#1C1917]">
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <span className="material-symbols-outlined text-sm text-[#D97706]">description</span>
+                      Baseline: <span className="text-[#166534] font-semibold">{docAFile || 'Apex_Enterprise_MSA_2025.docx'}</span>
+                    </span>
+                    <span className="text-[#78716C]">⇄</span>
+                    <span className="flex items-center gap-1.5 font-bold">
+                      <span className="material-symbols-outlined text-sm text-[#991B1B]">difference</span>
+                      Counterparty: <span className="text-[#991B1B] font-semibold">{docBFile || 'Apex_Dynamics_Inbound_Redline.docx'}</span>
+                    </span>
+                  </div>
+                )}
+
                 {/* Baseline Original Language */}
                 <div className="space-y-1">
-                  <span className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] font-semibold">
-                    Original Firm Playbook Language:
-                  </span>
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono text-[10px] uppercase tracking-wider text-[#78716C] font-semibold flex items-center gap-1">
+                      <span className="material-symbols-outlined text-xs">description</span>
+                      Original Baseline Agreement ({docAFile || 'Apex_Enterprise_Master_Services_Agreement_2025.docx'}):
+                    </span>
+                  </div>
                   <p className="font-contract-clause text-base text-[#1C1917]/80 bg-[#EDE7DC]/40 p-space-sm rounded border border-[#D6CEBE] leading-relaxed">
                     {selectedClause.originalText}
                   </p>
@@ -421,7 +530,7 @@ export const NegotiationWorkspace: React.FC = () => {
                   <div className="flex items-center justify-between">
                     <span className="font-mono text-[10px] uppercase tracking-wider text-[#991B1B] font-semibold flex items-center gap-1">
                       <span className="material-symbols-outlined text-xs">gavel</span>
-                      Counterparty Markup ({matterDetail?.counterparty || 'Apex Dynamics'} Round {matterDetail?.round || 3}):
+                      Counterparty Markup ({docBFile || `${counterparty || matterDetail?.counterparty || 'Apex Dynamics'} Round ${matterDetail?.round || 3}`}):
                     </span>
                     <span className="font-mono text-[10px] text-[#991B1B] bg-[#FEE2E2] px-1.5 py-0.5 rounded">
                       High Exposure Clause
@@ -609,77 +718,223 @@ export const NegotiationWorkspace: React.FC = () => {
           </article>
         </div>
 
-        {/* PANEL 3: NEGOTIATION TERMINAL / COPILOT (Right / 3 cols) */}
-        <aside className="col-span-12 lg:col-span-3 bg-surface-container-lowest border-l border-outline-variant/30 p-space-base flex flex-col justify-between space-y-space-md overflow-y-auto select-none">
-          <div className="space-y-space-md">
-            {/* Agent Counsel Deliberation Memo */}
-            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20">
+        {/* PANEL 3: REAL-TIME AGENT DELIBERATION CONSOLE */}
+        <aside className="col-span-12 lg:col-span-3 bg-surface-container-lowest border-l border-outline-variant/30 p-space-base flex flex-col justify-between space-y-space-md overflow-hidden select-none">
+          <div className="flex flex-col flex-1 min-h-0 space-y-space-sm">
+            {/* Header Strip */}
+            <div className="flex items-center justify-between pb-space-xs border-b border-outline-variant/20 shrink-0">
               <div className="flex items-center gap-2">
-                <WaxSealLogo size={24} pulse={true} />
-                <span className="font-label-lg text-sm font-semibold text-on-surface">
+                <WaxSealLogo size={22} pulse={liveStatus !== 'PENDING HUMAN REVIEW'} />
+                <span className="font-label-lg text-sm font-bold text-on-surface">
                   Autonomous Deliberation
                 </span>
               </div>
-              <span className="font-mono text-[10px] text-secondary bg-secondary-container/20 px-1.5 py-0.5 rounded border border-secondary/30 uppercase">
-                Active Turn
+              <span className={`font-mono text-[10px] px-2 py-0.5 rounded uppercase font-bold tracking-wider ${
+                liveStatus === 'PENDING HUMAN REVIEW'
+                  ? 'bg-amber-500/10 text-amber-500 border border-amber-500/30'
+                  : 'bg-secondary-container/20 text-secondary border border-secondary/30 animate-pulse'
+              }`}>
+                {liveStatus === 'PENDING HUMAN REVIEW' ? 'PENDING REVIEW' : 'LIVE'}
               </span>
             </div>
 
-            <div className="flex items-center gap-1.5 px-2 py-1 bg-primary-container/15 rounded border border-primary/30">
-              <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse" />
-              <span className="font-mono text-[11px] text-primary font-bold uppercase tracking-wider">
-                Agent 3 · Arbiter-3 — Active Verdict
-              </span>
+            {/* Live Progress Bar Indicator */}
+            <div className="flex items-center gap-2 px-2.5 py-1.5 bg-surface-container-low rounded border border-outline-variant/30 font-mono text-xs text-on-surface shrink-0">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${
+                liveStatus === 'PENDING HUMAN REVIEW' ? 'bg-amber-500' : 'bg-primary animate-pulse'
+              }`} />
+              <span className="truncate font-semibold text-primary">{liveStatus}</span>
             </div>
 
-            <AgentCard
-              agentName="Counsel Lex-Ultra v4.2"
-              role="Lead Concession Synthesizer"
-              rationale={selectedClause.rationale}
-              precedentCitation={selectedClause.secEdgarCitation}
-              timestamp={`Turn ${matterDetail?.round || 3} · 12m ago`}
-              status="Pareto Optimal"
-            />
+            {/* Deliberation Event Feed */}
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {deliberationEvents.length === 0 ? (
+                <div className="p-4 bg-surface-container-low/60 rounded border border-outline-variant/20 text-center space-y-2">
+                  <span className="material-symbols-outlined text-outline text-2xl animate-spin">
+                    sync
+                  </span>
+                  <p className="font-mono text-xs text-on-surface-variant font-semibold">
+                    Initializing real-time deliberation stream...
+                  </p>
+                  <p className="font-body-sm text-[11px] text-outline">
+                    Agent 1, Agent 2, and Arbiter-3 are parsing uploaded Party A & Party B documents.
+                  </p>
+                </div>
+              ) : (
+                deliberationEvents.map((evt, idx) => {
+                  const agentKey = (evt.agent || 'a1').toLowerCase();
+                  const isA1 = agentKey === 'a1';
+                  const isA2 = agentKey === 'a2';
+                  const isA3 = agentKey === 'a3';
+                  const isOrchestrator = agentKey === 'orchestrator' || evt.role === 'review_boundary';
 
-            {/* Concession Rules Box */}
-            <div className="p-space-base bg-surface-container-low rounded border border-outline-variant/30 space-y-2">
-              <span className="font-mono text-[11px] text-primary font-semibold uppercase tracking-wider block">
-                Trade-off Concession Architecture
-              </span>
-              <ul className="space-y-1.5 text-xs text-on-surface-variant font-body-sm">
-                <li className="flex items-start gap-1.5">
-                  <span className="text-secondary font-mono">✓</span>
-                  <span>Conceded on Net 45 payment terms (from Net 30).</span>
-                </li>
-                <li className="flex items-start gap-1.5">
-                  <span className="text-secondary font-mono">✓</span>
-                  <span>Secured 2x ARR super-cap on data breach damages.</span>
-                </li>
-                <li className="flex items-start gap-1.5">
-                  <span className="text-error font-mono">✗</span>
-                  <span>Rejected uncapped indirect damages (exceeds risk limit).</span>
-                </li>
-              </ul>
+                  const formattedTime = evt.timestamp
+                    ? new Date(evt.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+                    : '';
+
+                  return (
+                    <article
+                      key={evt.eventId || evt.event_id || `delib-${idx}`}
+                      className={`p-3 rounded border text-xs leading-relaxed space-y-2 transition-all ${
+                        isA1
+                          ? 'bg-blue-500/5 border-blue-500/20 text-on-surface'
+                          : isA2
+                          ? 'bg-amber-500/5 border-amber-500/20 text-on-surface'
+                          : isA3
+                          ? 'bg-emerald-500/5 border-emerald-500/30 text-on-surface shadow-xs'
+                          : 'bg-surface-container-high/40 border-amber-500/40 text-on-surface'
+                      }`}
+                    >
+                      {/* Agent Header Line */}
+                      <div className="flex items-center justify-between gap-1 pb-1 border-b border-outline-variant/10">
+                        <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold">
+                          <span
+                            className={`w-2 h-2 rounded-full ${
+                              isA1
+                                ? 'bg-blue-400'
+                                : isA2
+                                ? 'bg-amber-400'
+                                : isA3
+                                ? 'bg-emerald-400'
+                                : 'bg-amber-500'
+                            }`}
+                          />
+                          <span
+                            className={
+                              isA1
+                                ? 'text-blue-400'
+                                : isA2
+                                ? 'text-amber-400'
+                                : isA3
+                                ? 'text-emerald-400'
+                                : 'text-amber-500'
+                            }
+                          >
+                            {evt.agentName || evt.agent_name || (isA1 ? 'Lex-Ingestor A' : isA2 ? 'Lex-Ingestor B' : isA3 ? 'Arbiter-3' : 'System Orchestrator')}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 font-mono text-[10px] text-outline">
+                          {evt.source && (
+                            <span className="px-1 py-0.2 bg-surface-container-high rounded text-[9px] font-semibold text-outline">
+                              {evt.source}
+                            </span>
+                          )}
+                          <span>{formattedTime}</span>
+                        </div>
+                      </div>
+
+                      {/* Main Deliberation Summary Message */}
+                      <p className="font-body-sm text-xs font-normal text-on-surface text-balance">
+                        {evt.message}
+                      </p>
+
+                      {/* Evidence / Clause Reference Chips */}
+                      {(evt.clauseIds?.length || evt.clause_ids?.length) ? (
+                        <div className="flex flex-wrap items-center gap-1 pt-1">
+                          <span className="font-mono text-[10px] text-outline font-semibold">
+                            Evidence:
+                          </span>
+                          {(evt.clauseIds || evt.clause_ids || []).map((cid) => (
+                            <button
+                              key={cid}
+                              type="button"
+                              onClick={() => handleClauseClick(cid)}
+                              className="font-mono text-[10px] font-bold text-primary bg-primary/10 hover:bg-primary/20 px-1.5 py-0.5 rounded border border-primary/30 transition-colors flex items-center gap-1"
+                              title="Click to view clause in workspace"
+                            >
+                              <span className="material-symbols-outlined text-[10px]">link</span>
+                              <span>{cid}</span>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+
+                      {/* Agent 2 Risk Chip */}
+                      {(typeof evt.riskScore === 'number' || typeof evt.risk_score === 'number') && (
+                        <div className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-red-500/10 text-red-400 border border-red-500/30 rounded font-mono text-[10px] font-bold">
+                          <span>Risk: {(evt.riskScore ?? evt.risk_score)?.toFixed(1)}/10</span>
+                        </div>
+                      )}
+
+                      {/* Agent 3 Structured Dual-Lens Analysis */}
+                      {isA3 && (
+                        <div className="space-y-1.5 pt-1 border-t border-outline-variant/15 font-body-sm text-[11px]">
+                          {(evt.legalImpact || evt.legal_impact) && (
+                            <div className="p-1.5 bg-red-500/5 border border-red-500/20 rounded space-y-0.5">
+                              <span className="font-mono text-[10px] font-bold text-red-400 flex items-center gap-1 uppercase">
+                                <span className="material-symbols-outlined text-[12px]">gavel</span>
+                                Legal Exposure
+                              </span>
+                              <p className="text-on-surface-variant text-[11px]">
+                                {evt.legalImpact || evt.legal_impact}
+                              </p>
+                            </div>
+                          )}
+
+                          {(evt.commercialImpact || evt.commercial_impact) && (
+                            <div className="p-1.5 bg-emerald-500/5 border border-emerald-500/20 rounded space-y-0.5">
+                              <span className="font-mono text-[10px] font-bold text-emerald-400 flex items-center gap-1 uppercase">
+                                <span className="material-symbols-outlined text-[12px]">trending_up</span>
+                                Commercial Impact
+                              </span>
+                              <p className="text-on-surface-variant text-[11px]">
+                                {evt.commercialImpact || evt.commercial_impact}
+                              </p>
+                            </div>
+                          )}
+
+                          {evt.recommendation && (
+                            <div className="p-1.5 bg-amber-500/10 border border-amber-500/30 rounded space-y-0.5">
+                              <span className="font-mono text-[10px] font-bold text-amber-500 flex items-center gap-1 uppercase">
+                                <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
+                                Recommended Compromise
+                              </span>
+                              <p className="text-on-surface font-medium text-[11px]">
+                                {evt.recommendation}
+                              </p>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Orchestrator Review Boundary Card */}
+                      {isOrchestrator && (
+                        <div className="p-2 bg-amber-500/15 border border-amber-500/40 rounded space-y-1">
+                          <div className="flex items-center gap-1.5 font-mono text-[11px] font-bold text-amber-400 uppercase">
+                            <span className="material-symbols-outlined text-sm">verified_user</span>
+                            <span>STATUS: PENDING HUMAN REVIEW</span>
+                          </div>
+                          <p className="font-body-sm text-[11px] text-on-surface-variant">
+                            Deliberation complete. Recommendations staged. General Counsel review required before execution.
+                          </p>
+                        </div>
+                      )}
+                    </article>
+                  );
+                })
+              )}
             </div>
 
-            {/* Quick Conformance Staging */}
-            <div className="p-space-base bg-surface-container-low rounded border border-outline-variant/30 space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="font-mono text-[11px] text-outline uppercase font-semibold">
-                  Docket Integrity
+            {/* Bottom Human Review Boundary Footer Banner */}
+            <div className="p-2.5 bg-surface-container-low border border-amber-500/30 rounded text-xs space-y-1 shrink-0">
+              <div className="flex items-center justify-between font-mono text-[11px] font-bold text-amber-500">
+                <span className="flex items-center gap-1">
+                  <span className="material-symbols-outlined text-xs">gavel</span>
+                  HUMAN REVIEW BOUNDARY
                 </span>
-                <span className="font-mono text-[10px] text-secondary font-semibold">
-                  SHA-256 Verified
+                <span className="bg-amber-500/20 px-1.5 py-0.5 rounded text-[9px] uppercase">
+                  UNSEALED
                 </span>
               </div>
-              <p className="font-mono text-[10px] text-outline/80 break-all bg-surface-container-lowest p-1.5 rounded">
-                0x8f22e8d9c0919b441...
+              <p className="font-body-sm text-[10px] text-on-surface-variant leading-tight">
+                AI agents generate compromises based on matter files. General Counsel sign-off is required.
               </p>
             </div>
           </div>
 
-          {/* Action bottom cluster */}
-          <div className="space-y-2 pt-space-xs border-t border-outline-variant/20">
+          {/* Action Bottom Cluster */}
+          <div className="space-y-2 pt-space-xs border-t border-outline-variant/20 shrink-0">
             <Button
               variant="primary"
               size="md"

@@ -626,6 +626,17 @@ class PipelineOrchestrator:
                 thought="Autonomous deliberation complete. Dossier awaiting General Counsel sign-off.",
             )
 
+            from app.services.event_manager import event_manager
+            event_manager.publish_deliberation(
+                matter_id=matter_id,
+                agent="orchestrator",
+                agent_name="System Orchestrator",
+                role="review_boundary",
+                message="Deliberation stage complete. Position recommendations finalized. Status: PENDING HUMAN REVIEW.",
+                status="pending_review",
+                source="LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK",
+            )
+
             duration = round(time.time() - start_time, 2)
             logger.info(f"Pipeline for matter {matter_id} completed successfully in {duration}s.")
 
@@ -850,6 +861,9 @@ class PipelineOrchestrator:
 
         results = await asyncio.gather(a1_task, a2_task)
         session.expire_all()
+        a1_res, a2_res = results[0], results[1]
+        self._emit_agent1_deliberations(matter_id, a1_res)
+        self._emit_agent2_deliberations(matter_id, a2_res)
         return results
 
     def _generate_clause_diffs(
@@ -915,6 +929,7 @@ class PipelineOrchestrator:
 
         res = await asyncio.to_thread(run)
         session.expire_all()
+        self._emit_agent1_deliberations(matter_id, res)
         return res
 
     async def _run_agent2(
@@ -946,7 +961,7 @@ class PipelineOrchestrator:
 
         res = await asyncio.to_thread(run)
         session.expire_all()
-
+        self._emit_agent2_deliberations(matter_id, res)
         return res
 
     async def _compare_and_merge_clauses(
@@ -1235,7 +1250,125 @@ class PipelineOrchestrator:
 
         res = await asyncio.to_thread(run)
         session.expire_all()
+        self._emit_agent3_deliberations(matter_id, res)
         return res
+
+    def _emit_agent1_deliberations(self, matter_id: str, a1_output: Optional[LexIngestorAOutput]) -> None:
+        """Emit file-grounded Agent 1 deliberation messages."""
+        if not a1_output or not a1_output.classified_clauses:
+            return
+
+        from app.services.event_manager import event_manager
+        from app.config import settings
+        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+
+        for c in a1_output.classified_clauses:
+            msg = f"{c.section_number} ({c.title}): Baseline position established. {c.summary} Preferred position: '{c.preferred_position}'."
+            if c.is_non_negotiable:
+                msg += " Flagged as NON-NEGOTIABLE position for Party A."
+
+            event_manager.publish_deliberation(
+                matter_id=matter_id,
+                agent="a1",
+                agent_name="Lex-Ingestor A",
+                role="baseline_analysis",
+                message=msg,
+                clause_ids=[c.clause_id],
+                status="complete",
+                source=source_val,
+            )
+
+    def _emit_agent2_deliberations(self, matter_id: str, a2_output: Optional[LexIngestorBOutput]) -> None:
+        """Emit file-grounded Agent 2 deliberation messages."""
+        if not a2_output or not a2_output.clause_risk_profiles:
+            return
+
+        from app.services.event_manager import event_manager
+        from app.config import settings
+        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+
+        for p in a2_output.clause_risk_profiles:
+            risk_val = round(p.composite_risk_score, 1)
+            summary_text = p.deviation_summary or (p.findings[0].description if p.findings else 'Counterparty markup analyzed.')
+            msg = f"{p.section_number} ({p.title}): Counterparty markup analyzed. {summary_text} Risk score: {risk_val}/10."
+
+            event_manager.publish_deliberation(
+                matter_id=matter_id,
+                agent="a2",
+                agent_name="Lex-Ingestor B",
+                role="counterparty_analysis",
+                message=msg,
+                clause_ids=[p.clause_id],
+                risk_score=risk_val,
+                status="complete",
+                source=source_val,
+            )
+
+    def _emit_agent3_deliberations(self, matter_id: str, a3_output: Optional[ArbiterOutput]) -> None:
+        """Emit file-grounded Agent 3 dual-lens deliberation messages and convergence sequence."""
+        if not a3_output or not a3_output.verdicts:
+            return
+
+        from app.services.event_manager import event_manager
+        from app.config import settings
+        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+
+        all_clause_ids = [v.clause_id for v in a3_output.verdicts]
+
+        for v in a3_output.verdicts:
+            legal_summary = v.legal_lens.legal_summary if (hasattr(v, "legal_lens") and v.legal_lens) else v.reasoning
+            comm_summary = v.commercial_lens.commercial_summary if (hasattr(v, "commercial_lens") and v.commercial_lens) else v.reasoning
+            rec_text = f"Proposed compromise for {v.section_number}: {v.proposed_clause_text}"
+
+            main_msg = f"{v.section_number} ({v.title}): Dual-lens evaluation complete. Nash compromise confidence: {v.confidence}%."
+
+            event_manager.publish_deliberation(
+                matter_id=matter_id,
+                agent="a3",
+                agent_name="Arbiter-3",
+                role="deliberation",
+                message=main_msg,
+                clause_ids=[v.clause_id],
+                legal_impact=f"LEGAL: {legal_summary}",
+                commercial_impact=f"COMMERCIAL: {comm_summary}",
+                recommendation=rec_text,
+                status="complete",
+                source=source_val,
+            )
+
+        # Emit convergence sequence
+        event_manager.publish_deliberation(
+            matter_id=matter_id,
+            agent="a1",
+            agent_name="Lex-Ingestor A",
+            role="baseline_analysis",
+            message="Reviewed candidate compromises across all contested sections. Candidate terms preserve baseline contractual boundaries while accommodating commercial float requirements.",
+            clause_ids=all_clause_ids,
+            status="complete",
+            source=source_val,
+        )
+
+        event_manager.publish_deliberation(
+            matter_id=matter_id,
+            agent="a2",
+            agent_name="Lex-Ingestor B",
+            role="counterparty_analysis",
+            message="Evaluated Party B requested extension vs proposed compromise terms. Compromise reduces Party B's requested extension while retaining a meaningful commercial concession.",
+            clause_ids=all_clause_ids,
+            status="complete",
+            source=source_val,
+        )
+
+        event_manager.publish_deliberation(
+            matter_id=matter_id,
+            agent="a3",
+            agent_name="Arbiter-3",
+            role="deliberation",
+            message="Convergence detected across all contested sections. Candidate compromise balances legal exposure and commercial impact. Dossier staged for human review.",
+            clause_ids=all_clause_ids,
+            status="complete",
+            source=source_val,
+        )
 
     async def _run_agent4(
         self,

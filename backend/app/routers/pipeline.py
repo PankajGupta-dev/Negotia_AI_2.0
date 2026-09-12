@@ -43,6 +43,7 @@ HEARTBEAT_INTERVAL_SECONDS = 15.0
 # Supported event types to stream
 SUPPORTED_EVENT_TYPES = {
     "agent_update",
+    "deliberation",
     "merge_status",
     "pipeline_complete",
     "pipeline_error",
@@ -51,6 +52,7 @@ SUPPORTED_EVENT_TYPES = {
 # Mapping aliases to canonical event names
 EVENT_TYPE_MAP = {
     "agent_update": "agent_update",
+    "deliberation": "deliberation",
     "merge_status": "merge_status",
     "pipeline_complete": "pipeline_complete",
     "completion": "pipeline_complete",
@@ -88,7 +90,7 @@ def _serialize_event_data(evt: MatterEvent, canonical_type: str) -> Dict[str, An
         if isinstance(evt.timestamp, datetime)
         else str(evt.timestamp)
     )
-    return {
+    base = {
         "event": canonical_type,
         "matterId": evt.matter_id,
         "matter_id": evt.matter_id,
@@ -99,6 +101,11 @@ def _serialize_event_data(evt: MatterEvent, canonical_type: str) -> Dict[str, An
         "payload": evt.payload,
         "timestamp": timestamp_str,
     }
+
+    if canonical_type == "deliberation" and isinstance(evt.payload, dict):
+        base.update(evt.payload)
+
+    return base
 
 
 @router.get(

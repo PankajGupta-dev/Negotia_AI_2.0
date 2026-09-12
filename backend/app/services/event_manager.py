@@ -172,6 +172,71 @@ class EventManager:
             payload=payload,
         )
 
+    def publish_deliberation(
+        self,
+        matter_id: str,
+        agent: str,
+        agent_name: str,
+        role: str,
+        message: str,
+        clause_ids: Optional[List[str]] = None,
+        risk_score: Optional[float] = None,
+        legal_impact: Optional[str] = None,
+        commercial_impact: Optional[str] = None,
+        recommendation: Optional[str] = None,
+        status: Optional[str] = "complete",
+        source: Optional[str] = "LLM",
+        event_id: Optional[str] = None,
+    ) -> MatterEvent:
+        """
+        Publish a real-time, file-grounded agent deliberation event.
+        Persists event in MongoDB Atlas and broadcasts on SSE pub/sub bus.
+        """
+        import uuid
+        resolved_event_id = event_id or f"delib_{matter_id}_{uuid.uuid4().hex[:8]}"
+        ts = datetime.utcnow()
+        payload = {
+            "eventId": resolved_event_id,
+            "event_id": resolved_event_id,
+            "matterId": matter_id,
+            "matter_id": matter_id,
+            "agent": agent,
+            "agentName": agent_name,
+            "agent_name": agent_name,
+            "role": role,
+            "message": message,
+            "clauseIds": clause_ids or [],
+            "clause_ids": clause_ids or [],
+            "riskScore": risk_score,
+            "risk_score": risk_score,
+            "legalImpact": legal_impact,
+            "legal_impact": legal_impact,
+            "commercialImpact": commercial_impact,
+            "commercial_impact": commercial_impact,
+            "recommendation": recommendation,
+            "status": status,
+            "source": source or "LLM",
+            "timestamp": ts.isoformat(),
+        }
+
+        # Persist to MongoDBAtlas synchronously/asynchronously
+        try:
+            from app.db.database import sync_mongo_doc, COLLECTION_DELIBERATIONS
+            sync_mongo_doc(COLLECTION_DELIBERATIONS, {"event_id": resolved_event_id}, payload)
+        except Exception as err:
+            logger.debug(f"Deliberation MongoDB persistence notice: {err}")
+
+        return self.publish(
+            matter_id=matter_id,
+            event_type="deliberation",
+            agent=agent,
+            status=status,
+            message=message,
+            thought=None,
+            payload=payload,
+            timestamp=ts,
+        )
+
     def replay(
         self,
         matter_id: str,

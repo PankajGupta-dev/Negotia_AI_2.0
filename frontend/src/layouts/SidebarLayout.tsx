@@ -38,8 +38,6 @@ export const SidebarLayout: React.FC = () => {
       name: 'Negotiation Room',
       path: `/negotiations/${activeMatterId}`,
       icon: 'handshake',
-      badge: '4 pending',
-      badgeTone: 'rust',
     },
     { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
     { name: 'Executive Report', path: `/reports/${activeMatterId}`, icon: 'description' },

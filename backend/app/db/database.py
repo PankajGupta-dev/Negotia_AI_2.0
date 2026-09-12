@@ -28,6 +28,7 @@ COLLECTION_REVIEWS = "reviews"
 COLLECTION_REPORTS = "reports"
 COLLECTION_AUDIT_BLOCKS = "audit_blocks"
 COLLECTION_CHECKPOINTS = "checkpoints"
+COLLECTION_DELIBERATIONS = "agent_deliberations"
 
 
 def get_mongodb_uri() -> str:
@@ -171,9 +172,43 @@ async def _create_indexes(db: AsyncIOMotorDatabase) -> None:
         await db[COLLECTION_CHECKPOINTS].create_index([("id", pymongo.ASCENDING)], unique=True)
         await db[COLLECTION_CHECKPOINTS].create_index([("matter_id", pymongo.ASCENDING), ("round_number", pymongo.DESCENDING)])
 
-        logger.info("[MONGODB] Practical indexes verified on all 9 collections.")
+        # 10. agent_deliberations: event_id (unique), matter_id + timestamp
+        await db[COLLECTION_DELIBERATIONS].create_index([("event_id", pymongo.ASCENDING)], unique=True)
+        await db[COLLECTION_DELIBERATIONS].create_index([("matter_id", pymongo.ASCENDING), ("timestamp", pymongo.ASCENDING)])
+
+        logger.info("[MONGODB] Practical indexes verified on all collections.")
     except Exception as ex:
         logger.warning(f"[MONGODB] Warning while creating collection indexes: {ex}")
+
+
+async def store_deliberation_event(event_data: Dict[str, Any]) -> None:
+    """Store structured deliberation event into MongoDB Atlas agent_deliberations collection."""
+    try:
+        db = get_mongo_db()
+        event_id = event_data.get("event_id") or event_data.get("eventId")
+        if event_id:
+            await db[COLLECTION_DELIBERATIONS].replace_one(
+                {"event_id": event_id}, event_data, upsert=True
+            )
+        else:
+            await db[COLLECTION_DELIBERATIONS].insert_one(event_data)
+    except Exception as ex:
+        logger.debug(f"[MONGODB] store_deliberation_event failed: {ex}")
+
+
+async def get_deliberations_by_matter(matter_id: str) -> List[Dict[str, Any]]:
+    """Retrieve all persisted deliberation events for a given matter ordered by timestamp."""
+    try:
+        db = get_mongo_db()
+        cursor = db[COLLECTION_DELIBERATIONS].find(
+            {"matter_id": matter_id},
+            {"_id": 0}
+        ).sort("timestamp", pymongo.ASCENDING)
+        items = await cursor.to_list(length=1000)
+        return items
+    except Exception as ex:
+        logger.warning(f"[MONGODB] get_deliberations_by_matter failed: {ex}")
+        return []
 
 
 # ═════════════════════════════════════════════════════════════════════════════
