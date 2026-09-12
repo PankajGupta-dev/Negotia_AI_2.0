@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Dict, Generator, List, Optional
-from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+try:
+    from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+except Exception:
+    AsyncIOMotorClient = Any  # type: ignore
+    AsyncIOMotorDatabase = Any  # type: ignore
 import pymongo
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker

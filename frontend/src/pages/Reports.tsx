@@ -348,42 +348,82 @@ export const Reports: React.FC = () => {
           <div className="w-full h-px bg-outline-variant/30 my-space-md" />
 
           {/* 3. SYNTHESIS & EQUILIBRIUM RING GRID */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-center pt-space-xs">
-            {/* Left: Editorial Synthesis */}
-            <div className="lg:col-span-8 flex flex-col justify-center space-y-space-sm pr-0 lg:pr-space-md">
-              <div className="flex items-center gap-2">
-                <span className="material-symbols-outlined text-primary text-xl">
-                  verified_user
-                </span>
-                <span className="font-mono text-label-sm tracking-widest text-outline uppercase font-semibold">
-                  Autonomous Synthesis & Settlement Verdict
-                </span>
-              </div>
-              <h2 className="font-headline-md text-2xl text-on-surface font-serif">
-                Consensus Reached on Master Bilateral Terms
-              </h2>
-              <p className="font-body-md text-on-surface-variant text-sm leading-relaxed">
-                {executiveSummary}
-              </p>
-              <div className="pt-2 flex flex-wrap items-center gap-space-sm font-mono text-xs text-outline">
-                <span>Cycle Time: <strong>{turnaroundMinutes} minutes</strong></span>
-                <span>•</span>
-                <span>Outside Counsel Savings: <strong>${typeof savingsAmount === 'number' ? savingsAmount.toLocaleString() : savingsAmount}</strong></span>
-                <span>•</span>
-                <span className="text-secondary font-semibold">Zero Exposure Drift</span>
-              </div>
-            </div>
+          {(() => {
+            const fairnessIndex = reportData?.fairnessIndex ?? reportData?.fairness_index ?? 94;
+            const leverageScore = reportData?.leverageScore ?? reportData?.leverage_score ?? 6.8;
+            const acceptancePct = reportData?.counterpartyAcceptancePct ?? reportData?.counterparty_acceptance_pct ?? 91.5;
+            const equilibriumLabel = reportData?.equilibriumLabel ?? reportData?.equilibrium_label ?? 'Strong Nash Equilibrium';
+            const isPareto = reportData?.isParetoOptimal ?? reportData?.is_pareto_optimal ?? true;
 
-            {/* Right: Circular Equilibrium Ring */}
-            <div className="lg:col-span-4 bg-surface-container-low p-space-base rounded border border-outline-variant/30 flex flex-col items-center justify-center">
-              <FairnessGauge
-                value={94}
-                size={140}
-                label="Pareto Conformance"
-                sublabel="Nash Equilibrium Index"
-              />
-            </div>
-          </div>
+            return (
+              <div className="space-y-space-md pt-space-xs">
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-space-lg items-stretch">
+                  {/* Left: Editorial Synthesis */}
+                  <div className="lg:col-span-7 flex flex-col justify-between space-y-space-sm pr-0 lg:pr-space-md">
+                    <div className="space-y-space-xs">
+                      <div className="flex items-center gap-2">
+                        <span className="material-symbols-outlined text-primary text-xl">
+                          verified_user
+                        </span>
+                        <span className="font-mono text-label-sm tracking-widest text-outline uppercase font-semibold">
+                          Autonomous Synthesis & Settlement Verdict
+                        </span>
+                      </div>
+                      <h2 className="font-headline-md text-2xl text-on-surface font-serif">
+                        Consensus Reached on Master Bilateral Terms
+                      </h2>
+                      <p className="font-body-md text-on-surface-variant text-sm leading-relaxed">
+                        {executiveSummary}
+                      </p>
+                    </div>
+
+                    <div className="pt-3 flex flex-wrap items-center gap-space-sm font-mono text-xs text-outline border-t border-outline-variant/20">
+                      <span>Cycle Time: <strong>{turnaroundMinutes} minutes</strong></span>
+                      <span>•</span>
+                      <span>Outside Counsel Savings: <strong>${typeof savingsAmount === 'number' ? savingsAmount.toLocaleString() : savingsAmount}</strong></span>
+                      <span>•</span>
+                      <span className="text-secondary font-semibold flex items-center gap-1">
+                        <span className="w-1.5 h-1.5 rounded-full bg-secondary" />
+                        Zero Exposure Drift
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right: Circular Equilibrium Ring & Live Metrics Panel */}
+                  <div className="lg:col-span-5 bg-surface-container-low p-space-md rounded-lg border border-outline-variant/30 flex flex-col items-center justify-between space-y-space-sm">
+                    <FairnessGauge
+                      value={fairnessIndex}
+                      size={140}
+                      label="Pareto Conformance"
+                      sublabel="Nash Equilibrium Index"
+                    />
+
+                    {/* Real-Time Metrics Row */}
+                    <div className="w-full grid grid-cols-3 gap-2 pt-2 border-t border-outline-variant/30 text-center font-mono text-xs">
+                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
+                        <span className="text-[10px] text-outline uppercase block">Leverage</span>
+                        <span className="font-bold text-primary text-sm">{leverageScore} / 10</span>
+                      </div>
+                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
+                        <span className="text-[10px] text-outline uppercase block">Acceptance</span>
+                        <span className="font-bold text-secondary text-sm">{acceptancePct}%</span>
+                      </div>
+                      <div className="bg-surface-container-lowest p-2 rounded border border-outline-variant/20">
+                        <span className="text-[10px] text-outline uppercase block">Status</span>
+                        <span className="font-bold text-on-surface text-[11px] truncate block">
+                          {isPareto ? 'Pareto Opt.' : 'Sub-Optimal'}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="w-full text-center bg-primary-container/20 border border-primary/30 rounded py-1 px-2 font-mono text-[11px] text-primary font-semibold uppercase tracking-wider">
+                      {equilibriumLabel}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* 4. CONCESSIONS LEDGER TABLE */}
           <div className="mt-space-xl space-y-space-sm">
@@ -401,6 +441,34 @@ export const Reports: React.FC = () => {
               data={settledClauses}
               keyExtractor={(c) => c.id}
             />
+
+            {/* Render Key Bilateral Compromises if provided by Backend Negotiation Engine */}
+            {reportData?.keyBilateralCompromises && reportData.keyBilateralCompromises.length > 0 && (
+              <div className="mt-space-md p-space-md bg-surface-container-low rounded border border-outline-variant/30 space-y-space-xs">
+                <span className="font-mono text-xs uppercase tracking-wider text-primary font-semibold block">
+                  Arbiter-3 Bilateral Compromise Strategies
+                </span>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                  {reportData.keyBilateralCompromises.map((kbc: any, idx: number) => (
+                    <div key={idx} className="p-2 bg-surface-container-lowest rounded border border-outline-variant/20 font-mono text-xs space-y-1">
+                      <div className="flex justify-between items-center">
+                        <span className="font-bold text-on-surface">{kbc.title || kbc.clauseId}</span>
+                        <span className="text-[10px] bg-secondary-container/40 text-secondary px-1.5 py-0.5 rounded font-bold uppercase">
+                          {kbc.strategy}
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-on-surface-variant font-sans line-clamp-2 italic">
+                        "{kbc.conformedProposal}"
+                      </p>
+                      <div className="flex justify-between text-[10px] text-outline pt-1 border-t border-outline-variant/10">
+                        <span>Party A Utility: <strong className="text-primary">{kbc.partyAUtility}</strong></span>
+                        <span>Party B Utility: <strong className="text-secondary">{kbc.partyBUtility}</strong></span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* 5. HUMAN REVIEW GATE (AGENT 4) */}

@@ -361,10 +361,32 @@ export interface ReportResponse {
   sealed_at?: string | null;
   settledClauses: ClauseDetail[];
   settled_clauses?: ClauseDetail[];
-  settledClausesCount: number;
+  settledClausesCount?: number;
   settled_clauses_count?: number;
-  totalClausesCount: number;
+  totalClausesCount?: number;
   total_clauses_count?: number;
+  fairnessIndex?: number;
+  fairness_index?: number;
+  leverageScore?: number;
+  leverage_score?: number;
+  counterpartyAcceptancePct?: number;
+  counterparty_acceptance_pct?: number;
+  isParetoOptimal?: boolean;
+  is_pareto_optimal?: boolean;
+  equilibriumLabel?: string;
+  equilibrium_label?: string;
+  aggregateCompromiseScore?: number;
+  aggregate_compromise_score?: number;
+  trajectory?: Array<{ round: number; label: string; alignment_pct: number; status: string }>;
+  keyBilateralCompromises?: Array<{
+    clauseId: string;
+    title: string;
+    strategy: string;
+    compromiseScore: number;
+    conformedProposal: string;
+    partyAUtility: number;
+    partyBUtility: number;
+  }>;
   createdAt?: string;
   updatedAt?: string;
 }
