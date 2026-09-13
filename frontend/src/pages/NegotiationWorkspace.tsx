@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { WaxSealLogo } from '../components/WaxSealLogo';
 import { RiskChip } from '../components/RiskChip';
@@ -75,6 +75,21 @@ const resolveSenderName = (rawName?: string, rawRole?: string): string => {
   }
   return clean;
 };
+
+// 2-Way Bilateral Chat Policy Regexes
+export const CHAT_NUMBER_REGEX = /\d|\p{N}/u;
+export const CHAT_URL_URI_REGEX = /(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\S*|\b[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|ai|co|app|dev|biz|info|tech|online|xyz|law|legal|in|uk|de|ca|au|me|eu|us)(?:\/\S*)?\b|(?:mailto|tel|urn|data|javascript):\S+)/i;
+
+export function validateChatMessage(text: string): { isValid: boolean; error?: string } {
+  if (!text) return { isValid: true };
+  if (CHAT_NUMBER_REGEX.test(text)) {
+    return { isValid: false, error: 'Numbers are not permitted in 2-way chat.' };
+  }
+  if (CHAT_URL_URI_REGEX.test(text)) {
+    return { isValid: false, error: 'URLs and URIs are not permitted in 2-way chat.' };
+  }
+  return { isValid: true };
+}
 
 interface BilateralRoomEvent {
   id?: string;
@@ -297,6 +312,10 @@ export const NegotiationWorkspace: React.FC = () => {
     type: 'join' | 'leave' | 'closed' | 'info' | 'error';
   } | null>(null);
   const [chatInput, setChatInput] = useState<string>('');
+  const chatValidation = useMemo(() => {
+    if (!chatInput.trim()) return { isValid: true };
+    return validateChatMessage(chatInput);
+  }, [chatInput]);
 
   // Auto-dismiss presence notification banner after 4 seconds
   useEffect(() => {
@@ -1134,6 +1153,16 @@ export const NegotiationWorkspace: React.FC = () => {
     const cleanText = chatInput.trim();
     if (!cleanText) return;
 
+    const validation = validateChatMessage(cleanText);
+    if (!validation.isValid) {
+      setPresenceNotice({
+        text: validation.error || 'Policy violation: Numbers and URLs/URIs are not permitted in 2-way chat.',
+        type: 'error',
+      });
+      setAppliedNotification(validation.error || 'Policy violation: Numbers and URLs/URIs are not permitted.');
+      return;
+    }
+
     const myRole = (isCreatorOfRoom
       ? (roomDetail?.creator_role || 'buyer')
       : (roomDetail?.guest_role || 'seller')).toLowerCase();
@@ -1196,7 +1225,13 @@ export const NegotiationWorkspace: React.FC = () => {
             return [...prev, res.message];
           });
         }
-      } catch (err) {
+      } catch (err: any) {
+        const errorDetail = err?.response?.data?.detail || err?.message || 'Message rejected by server.';
+        setPresenceNotice({
+          text: String(errorDetail),
+          type: 'error',
+        });
+        setAppliedNotification(`Error: ${errorDetail}`);
         console.warn('REST message persist notice:', err);
       }
     }
@@ -2984,30 +3019,45 @@ export const NegotiationWorkspace: React.FC = () => {
                 </Button>
 
                 {/* Chat Message Input Form */}
-                <form onSubmit={handleSendBilateralMessage} className="flex gap-2 pt-2 shrink-0 border-t border-[#D6CEBE]">
-                  <input
-                    type="text"
-                    value={chatInput}
-                    onChange={(e) => setChatInput(e.target.value)}
-                    placeholder={
-                      isRoomClosed
-                        ? 'Room is closed.'
-                        : !wsConnected
-                        ? 'Connecting...'
-                        : 'Message counterparty counsel...'
-                    }
-                    disabled={isRoomClosed || !wsConnected}
-                    className="flex-1 bg-[#FAF7F2] border-2 border-[#D6CEBE] rounded px-2.5 py-1.5 text-xs text-[#1C1917] placeholder:text-[#A8A29E] focus:outline-none focus:border-[#D97706] transition-colors"
-                  />
-                  <Button
-                    variant="primary"
-                    size="sm"
-                    icon="send"
-                    type="submit"
-                    disabled={isRoomClosed || !wsConnected || !chatInput.trim()}
-                  >
-                    Send
-                  </Button>
+                <form onSubmit={handleSendBilateralMessage} className="flex flex-col gap-1.5 pt-2 shrink-0 border-t border-[#D6CEBE]">
+                  <div className="flex gap-2">
+                    <input
+                      type="text"
+                      value={chatInput}
+                      onChange={(e) => setChatInput(e.target.value)}
+                      placeholder={
+                        isRoomClosed
+                          ? 'Room is closed.'
+                          : !wsConnected
+                          ? 'Connecting...'
+                          : 'Message counterparty counsel...'
+                      }
+                      disabled={isRoomClosed || !wsConnected}
+                      className={`flex-1 bg-[#FAF7F2] border-2 rounded px-2.5 py-1.5 text-xs text-[#1C1917] placeholder:text-[#A8A29E] focus:outline-none transition-colors ${
+                        !chatValidation.isValid
+                          ? 'border-red-500 focus:border-red-600 bg-red-50/40 text-red-900'
+                          : 'border-[#D6CEBE] focus:border-[#D97706]'
+                      }`}
+                    />
+                    <Button
+                      variant="primary"
+                      size="sm"
+                      icon="send"
+                      type="submit"
+                      disabled={isRoomClosed || !wsConnected || !chatInput.trim() || !chatValidation.isValid}
+                    >
+                      Send
+                    </Button>
+                  </div>
+                  {!chatValidation.isValid && (
+                    <div className="flex items-center gap-1.5 text-[11px] font-mono font-medium text-red-700 bg-red-50 border border-red-200 px-2 py-1 rounded">
+                      <span className="material-symbols-outlined text-xs leading-none">block</span>
+                      <span>{chatValidation.error}</span>
+                    </div>
+                  )}
+                  <p className="text-[10px] font-mono text-[#78716C] leading-tight">
+                    Policy: Numbers and URLs/URIs are strictly prohibited in 2-way chat.
+                  </p>
                 </form>
               </div>
             ) : (

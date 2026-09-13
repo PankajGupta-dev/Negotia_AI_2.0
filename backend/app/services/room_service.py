@@ -12,6 +12,7 @@ Features:
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 import asyncio
 import logging
@@ -24,6 +25,33 @@ from app.db.models import NegotiationRoomDB
 from app.db.database import sync_room_to_mongo, get_room_from_mongo_sync
 
 logger = logging.getLogger(__name__)
+
+URL_URI_PATTERN = re.compile(
+    r'(?i)'
+    r'(?:'
+    r'\b[a-zA-Z][a-zA-Z0-9+.-]*:\/\/[^\s]+'
+    r'|\bwww\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s]*)?\b'
+    r'|\b[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|ai|co|app|dev|biz|info|tech|online|xyz|law|legal|in|uk|de|ca|au|me|eu|us)(?:\/[^\s]*)?\b'
+    r'|\b(?:mailto|tel|urn|data|javascript):[^\s]+'
+    r')'
+)
+NUMBER_PATTERN = re.compile(r'\d')
+
+
+def validate_chat_message(text: str) -> tuple[bool, Optional[str]]:
+    """
+    Validates a 2-way bilateral negotiation chat message.
+    Strictly prohibits numbers (any digit) and URLs/URIs.
+    Returns (is_valid, error_message).
+    """
+    if not text:
+        return True, None
+    if NUMBER_PATTERN.search(text):
+        return False, "Numbers are not permitted in 2-way chat messages."
+    if URL_URI_PATTERN.search(text):
+        return False, "URLs and URIs are not permitted in 2-way chat messages."
+    return True, None
+
 
 
 def sync_room(room: NegotiationRoomDB) -> None:

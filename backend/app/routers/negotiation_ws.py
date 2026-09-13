@@ -39,7 +39,7 @@ from starlette.websockets import WebSocketState
 
 from app.db.database import SessionLocal
 from app.db.models import NegotiationRoomDB
-from app.services.room_service import sync_room
+from app.services.room_service import sync_room, validate_chat_message
 
 logger = logging.getLogger(__name__)
 
@@ -466,6 +466,15 @@ async def negotiation_websocket_endpoint(
             elif event_type == "message":
                 text = (data.get("text") or "").strip()
                 if not text:
+                    continue
+                is_valid, validation_err = validate_chat_message(text)
+                if not is_valid:
+                    await websocket.send_json({
+                        "type": "room_error",
+                        "error": f"Policy violation: {validation_err}",
+                        "code": "CHAT_POLICY_VIOLATION",
+                        "timestamp": timestamp,
+                    })
                     continue
                 msg_id = data.get("id") or f"msg_{uuid.uuid4().hex[:10]}"
                 msg_event = {
