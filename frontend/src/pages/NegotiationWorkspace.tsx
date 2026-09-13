@@ -924,12 +924,35 @@ export const NegotiationWorkspace: React.FC = () => {
           }
           // Verify room status before kicking out to prevent spurious fallback for admitted participants
           getPrivateRoom(roomId).then((latest) => {
+            if (latest?.status === 'closed' || latest?.guest_status === 'rejected') {
+              isClosedRef.current = true;
+              setWsReconnecting(false);
+              navigate(`/private-room?room=${roomId}`, {
+                replace: true,
+                state: {
+                  error: latest?.status === 'closed'
+                    ? 'This negotiation room has been closed.'
+                    : 'Your admission request was rejected by the room creator.',
+                },
+              });
+              return;
+            }
+
             if (latest && (latest.guest_status === 'admitted' || latest.status === 'active')) {
               setTimeout(() => {
                 if (!isClosedRef.current && !isUnmountedRef.current) {
                   connectNegotiationWs(roomId);
                 }
               }, 1200);
+            } else if (reconnectAttemptsRef.current < 6) {
+              // Retry with progressive delay to allow cross-laptop MongoDB sync
+              reconnectAttemptsRef.current += 1;
+              setWsReconnecting(true);
+              setTimeout(() => {
+                if (!isClosedRef.current && !isUnmountedRef.current) {
+                  connectNegotiationWs(roomId);
+                }
+              }, 1500);
             } else {
               isClosedRef.current = true;
               setWsReconnecting(false);
@@ -939,7 +962,9 @@ export const NegotiationWorkspace: React.FC = () => {
               });
             }
           }).catch(() => {
-            if (roomDetail?.status === 'active' || roomDetail?.guest_status === 'admitted') {
+            if (reconnectAttemptsRef.current < 6) {
+              reconnectAttemptsRef.current += 1;
+              setWsReconnecting(true);
               setTimeout(() => {
                 if (!isClosedRef.current && !isUnmountedRef.current) {
                   connectNegotiationWs(roomId);
@@ -1162,8 +1187,24 @@ export const NegotiationWorkspace: React.FC = () => {
               }
 
               if (!isCreator && !isAdmittedGuest) {
-                // If the room is already active or admitted, allow participant without redirection
-                if (r.guest_status === 'admitted' || r.status === 'active') {
+                // If user is designated participant, allow brief polling for MongoDB sync latency across laptops
+                let finalRoom = r;
+                if (myStoredRole === 'participant' || hasParticipantToken) {
+                  for (let attempt = 0; attempt < 4; attempt++) {
+                    await new Promise((res) => setTimeout(res, 800));
+                    try {
+                      const refreshed = await getPrivateRoom(targetMatterId);
+                      if (refreshed && (refreshed.guest_status === 'admitted' || refreshed.status === 'active')) {
+                        finalRoom = refreshed;
+                        setRoomDetail(refreshed);
+                        sessionStorage.setItem(`room_${targetMatterId}_role`, 'participant');
+                        break;
+                      }
+                    } catch {}
+                  }
+                }
+
+                if (finalRoom.guest_status === 'admitted' || finalRoom.status === 'active') {
                   sessionStorage.setItem(`room_${targetMatterId}_role`, 'participant');
                 } else {
                   // Do not allow direct access just by knowing Room ID
@@ -1171,7 +1212,7 @@ export const NegotiationWorkspace: React.FC = () => {
                     replace: true,
                     state: {
                       error:
-                        r.guest_status === 'pending_approval'
+                        finalRoom.guest_status === 'pending_approval'
                           ? 'Your admission request is awaiting creator approval.'
                           : 'Access Denied: You must request admission and be admitted by the creator before entering.',
                     },

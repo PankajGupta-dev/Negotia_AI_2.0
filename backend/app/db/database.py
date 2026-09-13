@@ -239,6 +239,43 @@ def sync_room_to_mongo(room_dict: Dict[str, Any]) -> None:
                     msg_map[k] = m
                 # Sort by timestamp
                 payload["messages"] = sorted(list(msg_map.values()), key=lambda x: x.get("timestamp") or "")
+
+                # Status precedence: closed > active > waiting
+                cur_status = existing.get("status") or "waiting"
+                new_status = payload.get("status") or "waiting"
+                if cur_status == "closed" or new_status == "closed":
+                    payload["status"] = "closed"
+                    payload["closed_at"] = payload.get("closed_at") or existing.get("closed_at") or datetime.utcnow().isoformat()
+                elif cur_status == "active" or new_status == "active":
+                    payload["status"] = "active"
+
+                # Guest status precedence: left > admitted > pending_approval > none
+                # (rejected can transition from pending_approval)
+                cur_gs = existing.get("guest_status") or "none"
+                new_gs = payload.get("guest_status") or "none"
+                if new_gs == "left" or cur_gs == "left":
+                    payload["guest_status"] = "left"
+                elif new_gs == "rejected":
+                    payload["guest_status"] = "rejected"
+                elif cur_gs == "admitted" or new_gs == "admitted":
+                    payload["guest_status"] = "admitted"
+                elif cur_gs == "pending_approval" or new_gs == "pending_approval":
+                    payload["guest_status"] = "pending_approval"
+
+                # Preserve critical IDs and tokens if present in existing
+                for field in ("creator_token", "creator_id", "creator_name", "creator_role",
+                              "guest_token", "guest_id", "guest_name", "guest_role",
+                              "participant_id", "passcode", "matter_id", "title"):
+                    if not payload.get(field) and existing.get(field):
+                        payload[field] = existing[field]
+
+                # Merge shared state dictionaries
+                existing_st = existing.get("shared_state") or {}
+                new_st = payload.get("shared_state") or {}
+                merged_st = dict(existing_st)
+                merged_st.update(new_st)
+                payload["shared_state"] = merged_st
+
             db[COLLECTION_ROOMS].replace_one({"room_id": clean_id}, payload, upsert=True)
     except Exception as ex:
         logger.debug(f"[MONGODB] sync_room_to_mongo error: {ex}")

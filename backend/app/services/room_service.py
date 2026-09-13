@@ -158,17 +158,48 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
         if doc:
             if room:
                 updated = False
-                if doc.get("guest_status") and doc.get("guest_status") != room.guest_status:
-                    room.guest_status = doc.get("guest_status")
-                    room.guest_id = doc.get("guest_id") or room.guest_id
-                    room.guest_name = doc.get("guest_name") or room.guest_name
-                    room.guest_role = doc.get("guest_role") or room.guest_role
-                    room.guest_token = doc.get("guest_token") or room.guest_token
-                    room.participant_id = doc.get("participant_id") or room.participant_id
+                doc_gs = doc.get("guest_status")
+                if doc_gs and doc_gs != room.guest_status:
+                    # Do not regress admitted or left to pending_approval or none
+                    can_update_gs = True
+                    if room.guest_status in ("admitted", "left") and doc_gs in ("pending_approval", "none"):
+                        can_update_gs = False
+                    if can_update_gs:
+                        room.guest_status = doc_gs
+                        room.guest_id = doc.get("guest_id") or room.guest_id
+                        room.guest_name = doc.get("guest_name") or room.guest_name
+                        room.guest_role = doc.get("guest_role") or room.guest_role
+                        room.guest_token = doc.get("guest_token") or room.guest_token
+                        room.participant_id = doc.get("participant_id") or room.participant_id
+                        updated = True
+
+                doc_status = doc.get("status")
+                if doc_status and doc_status != room.status:
+                    # Do not regress active to waiting
+                    can_update_st = True
+                    if room.status in ("active", "closed") and doc_status == "waiting":
+                        can_update_st = False
+                    if can_update_st:
+                        room.status = doc_status
+                        if doc_status == "closed":
+                            cl_at = doc.get("closed_at")
+                            if cl_at:
+                                try:
+                                    room.closed_at = datetime.fromisoformat(cl_at)
+                                except Exception:
+                                    room.closed_at = datetime.utcnow()
+                        updated = True
+
+                if not room.guest_token and doc.get("guest_token"):
+                    room.guest_token = doc["guest_token"]
                     updated = True
-                if doc.get("status") and doc.get("status") != room.status:
-                    room.status = doc.get("status")
+                if not room.creator_token and doc.get("creator_token"):
+                    room.creator_token = doc["creator_token"]
                     updated = True
+                if not room.creator_id and doc.get("creator_id"):
+                    room.creator_id = doc["creator_id"]
+                    updated = True
+
                 if doc.get("active_participants_count") is not None and doc.get("active_participants_count") != room.active_participants_count:
                     room.active_participants_count = doc.get("active_participants_count")
                     updated = True

@@ -80,8 +80,27 @@ class NegotiationConnectionRegistry:
                     alive.append(e)
             self._rooms[room_id] = alive
 
-            # Strict maximum 2 active participants in bilateral room
-            if len(self._rooms[room_id]) >= 2:
+            # If a connection with the same party_role or participant_id already exists (e.g. reconnect or page refresh),
+            # cleanly close the prior connection and allow the new one.
+            prior_same_party = [
+                e for e in self._rooms[room_id]
+                if e.get("party_role") == party_role or e.get("participant_id") == participant_id
+            ]
+            for old_e in prior_same_party:
+                try:
+                    old_ws = old_e.get("ws")
+                    if old_ws and getattr(old_ws, "client_state", None) == WebSocketState.CONNECTED:
+                        asyncio.create_task(old_ws.close(code=1000, reason="Replaced by new connection"))
+                except Exception:
+                    pass
+                self._rooms[room_id] = [e for e in self._rooms[room_id] if e.get("conn_id") != old_e.get("conn_id")]
+
+            # Strict maximum 2 active participants: only reject if 2 distinct other parties are already active
+            active_parties = {
+                e.get("party_role") for e in self._rooms[room_id]
+                if e.get("ws") and getattr(e["ws"], "client_state", None) == WebSocketState.CONNECTED
+            }
+            if len(active_parties) >= 2 and party_role not in active_parties:
                 await websocket.send_json({
                     "type": "system",
                     "error": "Maximum 2 active participants reached for this negotiation room."
@@ -228,11 +247,9 @@ def persist_event_to_db(room_id: str, event: dict, shared_state_update: Optional
     """Persist event message and updated shared state to SQLite & MongoDB Atlas."""
     clean_room_id = (room_id or "").strip().upper()
     try:
-        from app.services.room_service import sync_room
+        from app.services.room_service import sync_room, get_room as svc_get_room
         with SessionLocal() as session:
-            room = session.query(NegotiationRoomDB).filter(
-                (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
-            ).first()
+            room = svc_get_room(session, clean_room_id)
             if room:
                 messages = list(room.messages or [])
                 messages.append(event)
@@ -348,9 +365,8 @@ async def negotiation_websocket_endpoint(
 
     active_cnt = registry.get_active_count(clean_room_id)
     with SessionLocal() as db:
-        cur_room = db.query(NegotiationRoomDB).filter(
-            (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
-        ).first()
+        from app.services.room_service import get_room as svc_get_room
+        cur_room = svc_get_room(db, clean_room_id)
         if cur_room:
             cur_room.active_participants_count = active_cnt
             db.commit()
@@ -617,9 +633,8 @@ async def negotiation_websocket_endpoint(
         cur_count = registry.get_active_count(clean_room_id)
         try:
             with SessionLocal() as db:
-                cur_room = db.query(NegotiationRoomDB).filter(
-                    (func.upper(NegotiationRoomDB.room_id) == clean_room_id) | (func.upper(NegotiationRoomDB.id) == clean_room_id)
-                ).first()
+                from app.services.room_service import get_room as svc_get_room
+                cur_room = svc_get_room(db, clean_room_id)
                 if cur_room:
                     if cur_room.status in ("closed", "expired"):
                         cur_room.active_participants_count = 0

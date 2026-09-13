@@ -208,6 +208,7 @@ export const PrivateRoom: React.FC = () => {
                 localStorage.getItem(`room_${savedJoinRoomId}_guest_token`) ||
                 '';
               sessionStorage.setItem(`room_${savedJoinRoomId}_role`, 'participant');
+              localStorage.setItem(`room_${savedJoinRoomId}_role`, 'participant');
               sessionStorage.setItem(`room_${savedJoinRoomId}_token`, partToken);
               sessionStorage.setItem(`room_${savedJoinRoomId}_guest_token`, partToken);
               localStorage.setItem(`room_${savedJoinRoomId}_guest_token`, partToken);
@@ -281,6 +282,7 @@ export const PrivateRoom: React.FC = () => {
                   localStorage.getItem(`room_${partRoomId}_guest_token`) ||
                   '';
                 sessionStorage.setItem(`room_${partRoomId}_role`, 'participant');
+                localStorage.setItem(`room_${partRoomId}_role`, 'participant');
                 sessionStorage.setItem(`room_${partRoomId}_token`, partToken);
                 sessionStorage.setItem(`room_${partRoomId}_guest_token`, partToken);
                 localStorage.setItem(`room_${partRoomId}_guest_token`, partToken);
@@ -361,6 +363,7 @@ export const PrivateRoom: React.FC = () => {
               localStorage.getItem(STORAGE_PARTICIPANT_TOKEN) ||
               '';
             sessionStorage.setItem(`room_${roomId}_role`, 'participant');
+            localStorage.setItem(`room_${roomId}_role`, 'participant');
             sessionStorage.setItem(`room_${roomId}_token`, savedToken);
             sessionStorage.setItem(`room_${roomId}_guest_token`, savedToken);
             localStorage.setItem(STORAGE_PARTICIPANT_ROOM, roomId);
@@ -424,6 +427,7 @@ export const PrivateRoom: React.FC = () => {
             localStorage.setItem(STORAGE_PARTICIPANT_TOKEN, effToken);
             localStorage.setItem(`room_${targetRoomId}_guest_token`, effToken);
             sessionStorage.setItem(`room_${targetRoomId}_role`, 'participant');
+            localStorage.setItem(`room_${targetRoomId}_role`, 'participant');
             sessionStorage.setItem(`room_${targetRoomId}_token`, effToken);
             sessionStorage.setItem(`room_${targetRoomId}_guest_token`, effToken);
             if (pollIntervalRef.current) clearInterval(pollIntervalRef.current);
