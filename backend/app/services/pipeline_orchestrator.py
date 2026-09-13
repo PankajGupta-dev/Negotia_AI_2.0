@@ -477,6 +477,15 @@ class PipelineOrchestrator:
                 thought="Multi-round negotiation chamber open. Monitoring termination bounds (max 6 rounds, 90s, stalemate guard).",
             )
 
+            # Party Name PDF Match Check: Make DISAGREE if buyer or seller name are not found in PDF name
+            party_check_passed, party_check_reason = self._validate_party_names_in_pdf(
+                party_a_filename=party_a_filename,
+                party_b_filename=party_b_filename,
+                matter=matter,
+                party_a_text=party_a_text,
+                party_b_text=party_b_text,
+            )
+
             controller = NegotiationController(matter_id=matter_id, start_time=start_time)
             last_checkpoint = controller.load_latest_checkpoint(session, matter_id)
 
@@ -489,35 +498,48 @@ class PipelineOrchestrator:
             buyer_non_negotiables = a1_output.non_negotiables if (a1_output and a1_output.non_negotiables) else ["liability", "governing_law"]
             seller_non_negotiables = ["payment", "indemnification"]
 
-            for round_num in range(start_round, max_rounds_to_run + 1):
+            if not party_check_passed:
+                # Force DISAGREE due to buyer or seller name missing from PDF filename
                 current_checkpoint = controller.step_round(
-                    current_round=round_num,
+                    current_round=start_round,
                     previous_checkpoint=current_checkpoint,
                     base_clauses=base_clauses_for_controller,
                     buyer_non_negotiables=buyer_non_negotiables,
                     seller_non_negotiables=seller_non_negotiables,
                 )
+                current_checkpoint.status = NegotiationStatus.DISAGREE.value
+                current_checkpoint.termination_reason = party_check_reason
                 controller.save_checkpoint(session, current_checkpoint)
+            else:
+                for round_num in range(start_round, max_rounds_to_run + 1):
+                    current_checkpoint = controller.step_round(
+                        current_round=round_num,
+                        previous_checkpoint=current_checkpoint,
+                        base_clauses=base_clauses_for_controller,
+                        buyer_non_negotiables=buyer_non_negotiables,
+                        seller_non_negotiables=seller_non_negotiables,
+                    )
+                    controller.save_checkpoint(session, current_checkpoint)
 
-                self.emit_event(
-                    db=session,
-                    matter_id=matter_id,
-                    event_type=PipelineEventType.MERGE_STATUS,
-                    status=current_checkpoint.status,
-                    message=(
-                        f"Round {round_num}/6 [{current_checkpoint.status}]: "
-                        f"{len(current_checkpoint.agreed_clauses)} agreed, "
-                        f"{len(current_checkpoint.unresolved_clauses)} unresolved."
-                    ),
-                    thought=(
-                        f"Round {round_num} complete. Negotiation Status: {current_checkpoint.status}. "
-                        f"Compact context tokens: {current_checkpoint.token_usage_estimate}. "
-                        f"Elapsed: {current_checkpoint.elapsed_seconds}s."
-                    ),
-                )
+                    self.emit_event(
+                        db=session,
+                        matter_id=matter_id,
+                        event_type=PipelineEventType.MERGE_STATUS,
+                        status=current_checkpoint.status,
+                        message=(
+                            f"Round {round_num}/6 [{current_checkpoint.status}]: "
+                            f"{len(current_checkpoint.agreed_clauses)} agreed, "
+                            f"{len(current_checkpoint.unresolved_clauses)} unresolved."
+                        ),
+                        thought=(
+                            f"Round {round_num} complete. Negotiation Status: {current_checkpoint.status}. "
+                            f"Compact context tokens: {current_checkpoint.token_usage_estimate}. "
+                            f"Elapsed: {current_checkpoint.elapsed_seconds}s."
+                        ),
+                    )
 
-                if current_checkpoint.status in (NegotiationStatus.AGREE.value, NegotiationStatus.DISAGREE.value):
-                    break
+                    if current_checkpoint.status in (NegotiationStatus.AGREE.value, NegotiationStatus.DISAGREE.value):
+                        break
 
             neg_output, settled_clause_models = await self._compare_and_merge_clauses(
                 session=session,
@@ -529,7 +551,7 @@ class PipelineOrchestrator:
                 checkpoint=current_checkpoint,
             )
 
-            # If DISAGREE: Terminate safely without proceeding to agreement report generation
+            # If DISAGREE: Terminate safely with DISAGREE status and stop execution at Agent 2
             if current_checkpoint and current_checkpoint.status == NegotiationStatus.DISAGREE.value:
                 matter.stage = "Negotiation Deadlock — Awaiting GC Direction"
                 matter.status = "disagree"
@@ -549,7 +571,7 @@ class PipelineOrchestrator:
                     event_type=PipelineEventType.PIPELINE_COMPLETE,
                     status="DISAGREE",
                     message=f"Negotiation halted: DISAGREE ({current_checkpoint.termination_reason})",
-                    thought="Negotiation ended in deadlock. Review unresolved clauses or click Resume.",
+                    thought="Negotiation ended in DISAGREE. Stopped execution at Agent 2.",
                 )
 
                 duration = round(time.time() - start_time, 2)
@@ -569,75 +591,41 @@ class PipelineOrchestrator:
                     agent4_output=None,
                 )
 
-            self.emit_event(
-                db=session,
-                matter_id=matter_id,
-                event_type=PipelineEventType.MERGE_STATUS,
-                status="AGREE",
-                message=(
-                    f"Bilateral consensus ratified. {len(neg_output.clause_results)} clauses scored; "
-                    f"Nash Equilibrium Index: {neg_output.aggregate_compromise_score:.1f}%."
-                ),
-            )
-
             # ─────────────────────────────────────────────────────────────────
-            # STAGE 7: Run Agent 3 (Arbiter-3)
+            # STOP PIPELINE EXECUTION AT AGENT 2
             # ─────────────────────────────────────────────────────────────────
-            if should_run_a3:
-                self._persist_stage(session, matter, stage=PipelineStage.RUNNING_AGENT_3)
-                a3_output = await self._run_agent3(
-                    session=session,
-                    matter=matter,
-                    a1_output=a1_output,
-                    a2_output=a2_output,
-                    neg_output=neg_output,
-                )
-            else:
-                a3_output = self._load_agent_output(session, matter_id, "a3")
-
-            # ─────────────────────────────────────────────────────────────────
-            # STAGE 8: Run Agent 4 (Scrivener-4)
-            # ─────────────────────────────────────────────────────────────────
-            if should_run_a4:
-                self._persist_stage(session, matter, stage=PipelineStage.RUNNING_AGENT_4)
-                a4_output = await self._run_agent4(
-                    session=session,
-                    matter=matter,
-                    settled_clauses=settled_clause_models,
-                    a3_output=a3_output,
-                    neg_output=neg_output,
-                )
-            else:
-                a4_output = self._load_agent_output(session, matter_id, "a4")
-
-            # ─────────────────────────────────────────────────────────────────
-            # STAGE 9: Set status = pending_review (Do not approve or seal)
-            # ─────────────────────────────────────────────────────────────────
-            self._persist_stage(
-                session, matter,
-                stage=PipelineStage.SETTING_PENDING_REVIEW,
-                status="pending_review",
-                risk_score=a3_output.aggregate_combined_risk if a3_output else matter.risk_score,
-            )
-
-            # Finalize matter record
-            matter.stage = "Stage 4 Concluded — Pending Human Review"
-            matter.status = "pending_review"
-            matter.round = 1
-            matter.pending_redlines_count = len(settled_clause_models)
+            final_status = current_checkpoint.status.lower() if current_checkpoint else "active"
+            matter.stage = "Stage 2 Concluded — Stopped at Agent 2 Execution"
+            matter.status = final_status
             session.commit()
             session.refresh(matter)
 
-            report_id = a4_output.report.id if (a4_output and a4_output.report) else f"rep_{matter_id}"
-
-            # Emit PIPELINE_COMPLETE event
             self.emit_event(
                 db=session,
                 matter_id=matter_id,
                 event_type=PipelineEventType.PIPELINE_COMPLETE,
-                report_id=report_id,
-                message=f"Pipeline finished successfully. Matter #{matter.docket_number} is pending human review.",
-                thought="Autonomous deliberation complete. Dossier awaiting General Counsel sign-off.",
+                status=final_status.upper(),
+                message=f"Pipeline finished execution after Agent 2. Status: {final_status.upper()}.",
+                thought="Agent 1 and Agent 2 execution completed. Pipeline execution stopped at Agent 2 per configuration.",
+            )
+
+            duration = round(time.time() - start_time, 2)
+            logger.info(f"Pipeline for matter {matter_id} stopped at Agent 2 in {duration}s.")
+
+            return PipelineResult(
+                matter_id=matter_id,
+                docket_number=matter.docket_number,
+                status=final_status,
+                stage=matter.stage,
+                success=True,
+                report_id=None,
+                clauses_count=len(settled_clause_models),
+                duration_seconds=duration,
+                agent1_output=a1_output.model_dump(mode="json") if a1_output else None,
+                agent2_output=a2_output.model_dump(mode="json") if a2_output else None,
+                negotiation_output=neg_output.model_dump(mode="json") if neg_output else None,
+                agent3_output=None,
+                agent4_output=None,
             )
 
             from app.services.event_manager import event_manager
@@ -762,8 +750,80 @@ class PipelineOrchestrator:
                 session.close()
 
     # ═════════════════════════════════════════════════════════════════════════
-    # Internal Stage Handlers
+    # Internal Stage Handlers & Validation
     # ═════════════════════════════════════════════════════════════════════════
+
+    def _validate_party_names_in_pdf(
+        self,
+        party_a_filename: str,
+        party_b_filename: str,
+        matter: MatterDB,
+        party_a_text: str = "",
+        party_b_text: str = "",
+    ) -> Tuple[bool, str]:
+        """
+        Check whether buyer name and seller name are present in the PDF filenames.
+        If either buyer or seller name is NOT found in any PDF filename, returns (False, reason).
+        """
+        import re
+
+        combined_pdf_names = f"{party_a_filename} {party_b_filename}".lower()
+
+        def extract_tokens(s: str) -> List[str]:
+            if not s:
+                return []
+            s_clean = re.sub(r'\.(pdf|docx|doc|txt|md)$', '', str(s), flags=re.IGNORECASE)
+            words = re.findall(r'[a-zA-Z0-9]+', s_clean)
+            ignore = {
+                "corp", "corporation", "inc", "incorporated", "ltd", "limited", "llc", "co", "company",
+                "party", "a", "b", "agreement", "msa", "contract", "doc", "pdf", "file", "baseline",
+                "markup", "redline", "inbound", "primary", "draft", "master", "services", "legal",
+                "intake", "negotiation", "matter"
+            }
+            return [w.lower() for w in words if w.lower() not in ignore and len(w) > 1]
+
+        # 1. Buyer tokens
+        buyer_tokens: List[str] = []
+        if matter.title and not matter.title.startswith("Negotiation Matter") and not matter.title.startswith("Contract Intake"):
+            buyer_tokens.extend(extract_tokens(matter.title))
+
+        cust_match = re.search(r'([A-Z][A-Za-z0-9\s.,&]+?)\s*\((?:"|\')?(?:Customer|Buyer|Party A)', party_a_text or "")
+        if cust_match:
+            buyer_tokens.extend(extract_tokens(cust_match.group(1)))
+
+        if not buyer_tokens:
+            buyer_tokens = ["apex", "buyer"]
+
+        # 2. Seller tokens
+        seller_tokens: List[str] = []
+        if matter.counterparty and matter.counterparty != "Party B Counterparty":
+            seller_tokens.extend(extract_tokens(matter.counterparty))
+
+        vend_match = re.search(r'([A-Z][A-Za-z0-9\s.,&]+?)\s*\((?:"|\')?(?:Vendor|Seller|Supplier|Provider|Party B)', (party_a_text + " " + party_b_text))
+        if vend_match:
+            seller_tokens.extend(extract_tokens(vend_match.group(1)))
+
+        if not seller_tokens:
+            seller_tokens = ["veloce", "seller"]
+
+        buyer_tokens = list(dict.fromkeys(buyer_tokens))
+        seller_tokens = list(dict.fromkeys(seller_tokens))
+
+        buyer_found = any(t in combined_pdf_names for t in buyer_tokens)
+        seller_found = any(t in combined_pdf_names for t in seller_tokens)
+
+        if not buyer_found or not seller_found:
+            missing_items = []
+            if not buyer_found:
+                missing_items.append(f"Buyer name ('{'/'.join(buyer_tokens)}')")
+            if not seller_found:
+                missing_items.append(f"Seller name ('{'/'.join(seller_tokens)}')")
+
+            missing_desc = " and ".join(missing_items)
+            reason = f"DISAGREE: {missing_desc} not found in PDF name ('{party_a_filename}', '{party_b_filename}')."
+            return False, reason
+
+        return True, ""
 
     async def _extract_party_document(
         self,
@@ -813,8 +873,11 @@ class PipelineOrchestrator:
         """
         Execute Agent 1 and Agent 2 independently and concurrently in worker threads.
         """
+        # Pre-import agent classes on main thread to avoid concurrent import deadlock in worker threads
+        from app.agents.agent1_ingestor_a import Agent1LexIngestorA
+        from app.agents.agent2_ingestor_b import Agent2LexIngestorB
+
         def run_a1():
-            from app.agents.agent1_ingestor_a import Agent1LexIngestorA
             s1 = SessionLocal()
             try:
                 agent1 = Agent1LexIngestorA(
@@ -847,7 +910,6 @@ class PipelineOrchestrator:
         diffs = self._generate_clause_diffs(party_a_clauses, party_b_clauses)
 
         def run_a2():
-            from app.agents.agent2_ingestor_b import Agent2LexIngestorB
             s2 = SessionLocal()
             try:
                 agent2 = Agent2LexIngestorB(

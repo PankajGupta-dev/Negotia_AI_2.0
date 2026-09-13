@@ -60,34 +60,41 @@ def test_full_pipeline_orchestration():
     )
     assert matter.id == test_id
 
+    from app.models.matter import DocumentParty
+    from app.services.matter_service import store_document_metadata
+    store_document_metadata(
+        db=session, matter_id=test_id, party=DocumentParty.PARTY_A,
+        filename="Apex_Dynamics_MSA.pdf", file_path="/tmp/Apex_Dynamics_MSA.pdf", file_type="pdf"
+    )
+    store_document_metadata(
+        db=session, matter_id=test_id, party=DocumentParty.PARTY_B,
+        filename="Veloce_Systems_Redline.pdf", file_path="/tmp/Veloce_Systems_Redline.pdf", file_type="pdf"
+    )
+
     # 2. Run the pipeline asynchronously
     result: PipelineResult = asyncio.run(
         orchestrator.run_pipeline(matter_id=test_id, db=session)
     )
 
 
-    # 3. Verify PipelineResult
+    # 3. Verify PipelineResult (Stops at Agent 2)
     assert result.success is True, f"Pipeline failed with error: {result.error}"
-    assert result.status == "pending_review"
     assert result.clauses_count > 0
     assert result.agent1_output is not None
     assert result.agent2_output is not None
     assert result.negotiation_output is not None
-    assert result.agent3_output is not None
-    assert result.agent4_output is not None
-    assert result.report_id is not None
+    assert result.agent3_output is None
+    assert result.agent4_output is None
 
-    # 4. Verify MatterDB persistence (Stage 9: status = pending_review)
+    # 4. Verify MatterDB persistence (Stage 2 Concluded)
     updated_matter = session.query(MatterDB).filter(MatterDB.id == test_id).first()
     assert updated_matter is not None
-    assert updated_matter.status == "pending_review"
-    assert "Pending Human Review" in updated_matter.stage
-    assert updated_matter.pending_redlines_count > 0
+    assert "Stage 2 Concluded" in updated_matter.stage
 
-    # 5. Verify AgentRunDB persistence for all 4 agents
+    # 5. Verify AgentRunDB persistence for Agent 1 and Agent 2
     runs = session.query(AgentRunDB).filter(AgentRunDB.matter_id == test_id).all()
     agent_ids = {r.agent_id for r in runs}
-    assert {"a1", "a2", "a3", "a4"}.issubset(agent_ids)
+    assert {"a1", "a2"}.issubset(agent_ids)
 
     for r in runs:
         assert r.status == AgentStatus.COMPLETE.value
@@ -96,34 +103,11 @@ def test_full_pipeline_orchestration():
 
     # 6. Verify ContractClauseDB persistence
     clauses = session.query(ContractClauseDB).filter(ContractClauseDB.matter_id == test_id).all()
-    assert len(clauses) >= 5
-    for c in clauses:
-        assert c.conformed_proposal is not None
-        assert len(c.conformed_proposal) > 0
-        assert c.status == "agreed"
+    assert len(clauses) >= 1
 
-    # 7. Verify AgentVerdictDB persistence
-    verdicts = session.query(AgentVerdictDB).all()
-    assert len(verdicts) > 0
-
-    # 8. Verify ReportDB persistence (strictly pending_review, unsealed)
-    report = session.query(ReportDB).filter(ReportDB.matter_id == test_id).first()
-    assert report is not None
-    assert report.review_status == "pending_review"
-    assert report.attestation_hash is None
-    assert report.block_digest is None
-    assert report.counsel_cost_saved > 0
-    assert "EXECUTIVE NEGOTIATION BRIEF" in report.executive_summary
-
-    # 9. Verify AuditRecordDB persistence
-    audit = session.query(AuditRecordDB).filter(AuditRecordDB.matter_id == test_id).first()
-    assert audit is not None
-    assert audit.sha256_hash is not None
-    assert len(audit.sha256_hash) == 64
-
-    # 10. Verify Event Broker has buffered events (SSE independent)
+    # 7. Verify Event Broker has buffered events
     history = orchestrator.event_broker.get_history(test_id)
-    assert len(history) >= 5
+    assert len(history) >= 3
     complete_events = [e for e in history if e.event == PipelineEventType.PIPELINE_COMPLETE]
     assert len(complete_events) == 1
 
@@ -131,34 +115,43 @@ def test_full_pipeline_orchestration():
     print("PASS: test_full_pipeline_orchestration")
 
 
-def test_retry_failed_agent():
-    """Test retrying a specific agent (e.g. Agent 3) re-executing downstream without starting from scratch."""
+def test_party_name_mismatch_pdf_disagree():
+    """Test that missing buyer or seller name in PDF filename forces status to DISAGREE."""
     orchestrator = PipelineOrchestrator()
     session = SessionLocal()
-    retry_id = f"TEST-RETRY-{uuid.uuid4().hex[:6].upper()}"
+    mismatch_id = f"TEST-MISMATCH-{uuid.uuid4().hex[:6].upper()}"
 
-    # Setup matter and run pipeline once
     create_matter(
         db=session,
-        title="Retry Test Matter",
+        title="Apex Dynamics Corp.",
         counterparty="Veloce Systems Inc.",
-        matter_id=retry_id,
-        docket_number=f"DOCKET #{retry_id}",
+        matter_id=mismatch_id,
+        docket_number=f"DOCKET #{mismatch_id}",
     )
-    asyncio.run(orchestrator.run_pipeline(matter_id=retry_id, db=session))
-
-    # Retry Agent 3 on the matter
-    retry_result: PipelineResult = asyncio.run(
-        orchestrator.retry_agent(matter_id=retry_id, agent_id="a3", db=session)
+    # Mock document metadata with filenames missing party names (e.g. LOGIC_FORGE.pdf)
+    from app.models.matter import DocumentParty
+    from app.services.matter_service import store_document_metadata
+    store_document_metadata(
+        db=session, matter_id=mismatch_id, party=DocumentParty.PARTY_A,
+        filename="LOGIC_FORGE.pdf", file_path="/tmp/LOGIC_FORGE.pdf", file_type="pdf"
+    )
+    store_document_metadata(
+        db=session, matter_id=mismatch_id, party=DocumentParty.PARTY_B,
+        filename="LOGIC_FORGE_MARKUP.pdf", file_path="/tmp/LOGIC_FORGE_MARKUP.pdf", file_type="pdf"
     )
 
-    assert retry_result.success is True
-    assert retry_result.status == "pending_review"
-    assert retry_result.agent3_output is not None
-    assert retry_result.agent4_output is not None
+    result: PipelineResult = asyncio.run(
+        orchestrator.run_pipeline(matter_id=mismatch_id, db=session)
+    )
+
+    assert result.success is True
+    assert result.status == "disagree"
+
+    updated_matter = session.query(MatterDB).filter(MatterDB.id == mismatch_id).first()
+    assert updated_matter.status == "disagree"
 
     session.close()
-    print("PASS: test_retry_failed_agent")
+    print("PASS: test_party_name_mismatch_pdf_disagree")
 
 
 def test_event_broker_subscription():
@@ -212,6 +205,6 @@ def test_event_broker_subscription():
 if __name__ == "__main__":
     setup_module()
     test_full_pipeline_orchestration()
-    test_retry_failed_agent()
+    test_party_name_mismatch_pdf_disagree()
     test_event_broker_subscription()
     print("ALL ORCHESTRATOR TESTS PASSED SUCCESSFULLY!")
