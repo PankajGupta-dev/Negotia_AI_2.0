@@ -558,9 +558,17 @@ export const NegotiationWorkspace: React.FC = () => {
     if (isRunningPipeline) return;
     setIsRunningPipeline(true);
     try {
-      await startRoomPipeline(targetMatterId);
+      localStorage.setItem('negotia_active_private_room_id', targetMatterId);
       setLiveStatus('Multi-Agent Pipeline Deliberating (Agents 1-4)...');
       setConsoleTab('ai_agents');
+
+      // Start the pipeline execution on backend
+      const runPromise = startRoomPipeline(targetMatterId);
+
+      // Navigate to the Live Agent Pipeline page so the workflow is shown live!
+      navigate(`/pipeline/${targetMatterId}`);
+
+      await runPromise;
       const [d, sh] = await Promise.allSettled([
         getPrivateRoom(targetMatterId),
         getRoomSharedState(targetMatterId),
@@ -1394,11 +1402,53 @@ export const NegotiationWorkspace: React.FC = () => {
           else if (evt.agent === 'a3') setLiveStatus('Arbiter-3 evaluating trade-offs...');
           else setLiveStatus(evt.message);
         }
+
+        const thoughtOrMsg = evt.thought || evt.message;
+        if (thoughtOrMsg) {
+          const agentKey = evt.agent || 'a1';
+          const agentName =
+            agentKey === 'a1' ? 'Buyer Legal Analyst (Lex-Ingestor A)' :
+            agentKey === 'a2' ? 'Seller Redline Auditor (Lex-Ingestor B)' :
+            agentKey === 'a3' ? 'AI Judge & Mediator (Arbiter-3)' :
+            'Executive Report Clerk (Scrivener-4)';
+          const updateEv: DeliberationEvent = {
+            eventId: evt.eventId || evt.event_id || `upd_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+            matterId: evt.matterId || evt.matter_id || targetMatterId,
+            agent: agentKey,
+            agentName: agentName,
+            role: 'agent_deliberation',
+            message: thoughtOrMsg,
+            clauseIds: evt.clauseIds || evt.clause_ids || [],
+            timestamp: evt.timestamp || new Date().toISOString(),
+            status: evt.status || 'running',
+            source: 'LLM',
+          };
+          setDeliberationEvents((prev) => {
+            if (prev.some((e) => e.message === thoughtOrMsg)) return prev;
+            return [...prev, updateEv];
+          });
+        }
       }
 
       if (evType === 'pipeline_complete' || evt.status === 'pending_review') {
         setLiveStatus('PENDING HUMAN REVIEW');
         setActiveAgent('orchestrator');
+        const completeEv: DeliberationEvent = {
+          eventId: `comp_${Date.now()}`,
+          matterId: targetMatterId,
+          agent: 'a4',
+          agentName: 'Executive Synthesis (Scrivener-4)',
+          role: 'review_boundary',
+          message: evt.message || 'Autonomous deliberation complete. Dossier awaiting General Counsel sign-off.',
+          clauseIds: [],
+          timestamp: evt.timestamp || new Date().toISOString(),
+          status: 'pending_review',
+          source: 'LLM',
+        };
+        setDeliberationEvents((prev) => {
+          if (prev.some((e) => e.role === 'review_boundary')) return prev;
+          return [...prev, completeEv];
+        });
       }
     });
 

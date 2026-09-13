@@ -222,7 +222,28 @@ def get_single_matter(
     db: Session = Depends(get_db),
 ) -> Dict[str, Any]:
     """Retrieve matter details."""
-    matter = get_matter(db, id)
+    clean_id = (id or "").strip()
+    matter = get_matter(db, clean_id)
+    if not matter:
+        from app.services.room_service import get_room
+        room = get_room(db, clean_id)
+        if room:
+            resolved_matter_id = room.matter_id or room.room_id
+            matter = get_matter(db, resolved_matter_id)
+            if not matter:
+                from app.services.matter_service import create_matter
+                matter = create_matter(
+                    db=db,
+                    title=room.title or f"Negotiation Matter {room.room_id}",
+                    counterparty=room.guest_name or "Counterparty Counsel",
+                    matter_id=resolved_matter_id,
+                    docket_number=f"DOCKET #{resolved_matter_id}",
+                    arr_value="$4.2M",
+                    variance_ceiling=0.15,
+                    lead_counsel=room.creator_name or "Lead Counsel",
+                )
+                room.matter_id = resolved_matter_id
+                db.commit()
     if not matter:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -248,7 +269,16 @@ def get_matter_clauses(
     """
     Retrieve all clauses with bilateral analysis and Arbiter verdicts for a matter.
     """
-    matter = get_matter(db, id)
+    clean_id = (id or "").strip()
+    matter = get_matter(db, clean_id)
+    target_matter_id = clean_id
+    if not matter:
+        from app.services.room_service import get_room
+        room = get_room(db, clean_id)
+        if room:
+            target_matter_id = room.matter_id or room.room_id
+            matter = get_matter(db, target_matter_id)
+
     if not matter:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -258,7 +288,7 @@ def get_matter_clauses(
     # Query all clauses for this matter, joined with their verdicts
     clauses: List[ContractClauseDB] = (
         db.query(ContractClauseDB)
-        .filter(ContractClauseDB.matter_id == id)
+        .filter((ContractClauseDB.matter_id == clean_id) | (ContractClauseDB.matter_id == target_matter_id))
         .all()
     )
 

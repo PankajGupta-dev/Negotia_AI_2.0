@@ -93,6 +93,14 @@ class EventManager:
         self._subscribers: Dict[str, Set[asyncio.Queue[MatterEvent]]] = defaultdict(set)
         self._completion_events: Dict[str, asyncio.Event] = defaultdict(asyncio.Event)
         self._completion_records: Dict[str, MatterEvent] = {}
+        self._aliases: Dict[str, str] = {}
+
+    def register_alias(self, id1: str, id2: str) -> None:
+        """Link an alias (e.g. room_id) to a canonical matter_id so events broadcast to both."""
+        if not id1 or not id2 or id1 == id2:
+            return
+        self._aliases[id1] = id2
+        self._aliases[id2] = id1
 
     def publish_event(self, event: MatterEvent) -> MatterEvent:
         """
@@ -121,6 +129,20 @@ class EventManager:
                 logger.warning(f"Subscriber queue full for matter {matter_id}; dropping event.")
             except Exception as ex:
                 logger.debug(f"Failed to dispatch event to subscriber: {ex}")
+
+        # 4. Broadcast to alias if mapped
+        alias = self._aliases.get(matter_id)
+        if alias and alias != matter_id:
+            try:
+                alias_event = event.model_copy(update={"matter_id": alias})
+                self._history[alias].append(alias_event)
+                for q in list(self._subscribers.get(alias, [])):
+                    try:
+                        q.put_nowait(alias_event)
+                    except Exception:
+                        pass
+            except Exception as al_err:
+                logger.debug(f"Alias event dispatch notice: {al_err}")
 
         return event
 
@@ -247,6 +269,8 @@ class EventManager:
         Replay recent events for a matter from the in-memory ring-buffer.
         """
         events = list(self._history.get(matter_id, []))
+        if not events and matter_id in self._aliases:
+            events = list(self._history.get(self._aliases[matter_id], []))
         if limit is not None and limit > 0:
             return events[-limit:]
         return events

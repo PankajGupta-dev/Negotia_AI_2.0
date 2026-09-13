@@ -23,10 +23,11 @@ export const SidebarLayout: React.FC = () => {
 
   // Active private room check across tabs and sessions
   const activePrivateRoomId =
+    localStorage.getItem('negotia_active_private_room_id') ||
     localStorage.getItem('negotia_creator_room_id') ||
     localStorage.getItem('negotia_participant_room_id');
 
-  const activeMatterId = matterId || '2025-INT-809';
+  const activeMatterId = activePrivateRoomId || matterId || '2025-INT-809';
   const targetNegotiationPath = activePrivateRoomId
     ? `/negotiations/${activePrivateRoomId}`
     : `/negotiations/${activeMatterId}`;
@@ -55,8 +56,8 @@ export const SidebarLayout: React.FC = () => {
       badgeTone: activePrivateRoomId ? 'forest' : 'amber',
     },
     { name: 'Negotiation Sandbox', path: '/sandbox', icon: 'science' },
-    { name: 'Executive Report', path: '/reports', icon: 'description' },
-    { name: 'Audit and Governance', path: '/governance', icon: 'verified_user' },
+    { name: 'Executive Report', path: activePrivateRoomId ? `/reports/${activePrivateRoomId}` : '/reports', icon: 'description' },
+    { name: 'Audit and Governance', path: activePrivateRoomId ? `/governance/${activePrivateRoomId}` : '/governance', icon: 'verified_user' },
   ];
 
   // Close profile popover on outside click

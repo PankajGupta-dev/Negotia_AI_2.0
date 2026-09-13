@@ -1414,6 +1414,13 @@ async def execute_room_pipeline(
 
     resolved_matter_id = room.matter_id or room.room_id
 
+    # Register alias in EventManager so SSE stream works seamlessly for both room_id and matter_id
+    try:
+        from app.services.event_manager import event_manager
+        event_manager.register_alias(room_id, resolved_matter_id)
+    except Exception:
+        pass
+
     # Mark pipeline as running
     state["pipeline_status"] = "running"
     room.shared_state = state

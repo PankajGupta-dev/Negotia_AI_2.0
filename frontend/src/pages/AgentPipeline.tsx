@@ -123,7 +123,7 @@ function resolveAgentIndex(agentKey?: string): number {
   if (k === 'a1' || k === 'agent1' || k === 'agent_1' || k.includes('ingestor a') || k.includes('buyer')) return 0;
   if (k === 'a2' || k === 'agent2' || k === 'agent_2' || k.includes('ingestor b') || k.includes('seller')) return 1;
   if (k === 'a3' || k === 'agent3' || k === 'agent_3' || k.includes('arbiter') || k.includes('judge')) return 2;
-  if (k === 'a4' || k === 'agent4' || k === 'agent_4' || k.includes('scrivener') || k.includes('clerk')) return 3;
+  if (k === 'a4' || k === 'agent4' || k === 'agent_4' || k.includes('scrivener') || k.includes('clerk') || k.includes('orchestrator') || k.includes('synthesis')) return 3;
   return -1;
 }
 
@@ -142,7 +142,7 @@ export const AgentPipeline: React.FC = () => {
   const [isResuming, setIsResuming] = useState(false);
   const [resumeMessage, setResumeMessage] = useState<string | null>(null);
 
-  const targetId = id || '2025-INT-809';
+  const targetId = id || localStorage.getItem('negotia_active_private_room_id') || '2025-INT-809';
 
   const loadCheckpoint = async () => {
     try {
@@ -249,6 +249,33 @@ export const AgentPipeline: React.FC = () => {
         }
       })
       .catch(() => {});
+
+    // 1b. If targetId is a private room, check room pipeline state
+    if (targetId.startsWith('NEG-')) {
+      fetch(`${BACKEND_BASE_URL}/api/rooms/${encodeURIComponent(targetId)}/pipeline`)
+        .then((res) => (res.ok ? res.json() : null))
+        .then((roomPipe) => {
+          if (roomPipe) {
+            if (roomPipe.pipeline_status === 'completed' || ['pending_review', 'approved', 'sealed'].includes(roomPipe.review_status) || roomPipe.is_sealed) {
+              setPipelineComplete(true);
+              setStatuses(['complete', 'complete', 'complete', 'complete']);
+              setStreamLines((prev) => {
+                if (prev.every((arr) => arr.length === 0)) {
+                  return getAgentInitialLines(docAFile, docBFile);
+                }
+                return prev;
+              });
+            } else if (roomPipe.pipeline_status === 'running') {
+              setStatuses((prev) => {
+                const next = [...prev];
+                if (next[0] === 'idle') next[0] = 'running';
+                return next;
+              });
+            }
+          }
+        })
+        .catch(() => {});
+    }
 
     // 2. Connect to live SSE stream
     try {
@@ -456,6 +483,46 @@ export const AgentPipeline: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-3">
+            {/* Workflow Navigation Shortcuts */}
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => navigate(`/negotiations/${targetId}`)}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-primary hover:border-primary/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Negotiation Room"
+              >
+                <span className="material-symbols-outlined text-[13px]">handshake</span>
+                <span className="hidden sm:inline">Room</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate('/sandbox')}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-secondary hover:border-secondary/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Negotiation Sandbox"
+              >
+                <span className="material-symbols-outlined text-[13px]">science</span>
+                <span className="hidden sm:inline">Sandbox</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/reports/${targetId}`)}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-amber-400 hover:border-amber-500/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Executive Report"
+              >
+                <span className="material-symbols-outlined text-[13px]">summarize</span>
+                <span className="hidden sm:inline">Report</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => navigate(`/governance/${targetId}`)}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-emerald-400 hover:border-emerald-500/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Audit & Governance"
+              >
+                <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                <span className="hidden sm:inline">Audit</span>
+              </button>
+            </div>
+
             <button
               type="button"
               onClick={() => setShowExplainer(!showExplainer)}
@@ -931,7 +998,7 @@ export const AgentPipeline: React.FC = () => {
                 variant="outline"
                 size="lg"
                 icon="handshake"
-                onClick={() => navigate(`/negotiations/${id || '2025-INT-809'}`)}
+                onClick={() => navigate(`/negotiations/${targetId}`)}
               >
                 Negotiation Workspace
               </Button>
@@ -939,7 +1006,7 @@ export const AgentPipeline: React.FC = () => {
                 variant="primary"
                 size="lg"
                 icon="description"
-                onClick={() => navigate(`/reports/${id || '2025-INT-809'}`)}
+                onClick={() => navigate(`/reports/${targetId}`)}
               >
                 Review Executive Report
               </Button>
