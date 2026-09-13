@@ -269,11 +269,29 @@ def sync_room_to_mongo(room_dict: Dict[str, Any]) -> None:
                     if not payload.get(field) and existing.get(field):
                         payload[field] = existing[field]
 
-                # Merge shared state dictionaries
+                # Deep-merge shared state dictionaries and private submissions
                 existing_st = existing.get("shared_state") or {}
                 new_st = payload.get("shared_state") or {}
                 merged_st = dict(existing_st)
                 merged_st.update(new_st)
+
+                # Isolate and preserve party-private submissions from both laptops
+                existing_priv = dict(existing_st.get("_private_submissions") or {})
+                new_priv = dict(new_st.get("_private_submissions") or {})
+                merged_priv = dict(existing_priv)
+                merged_priv.update(new_priv)
+                merged_st["_private_submissions"] = merged_priv
+
+                # Compute combined submission flags
+                has_a = bool("party_a" in merged_priv or existing_st.get("has_party_a_submitted") or new_st.get("has_party_a_submitted"))
+                has_b = bool("party_b" in merged_priv or existing_st.get("has_party_b_submitted") or new_st.get("has_party_b_submitted"))
+                merged_st["has_party_a_submitted"] = has_a
+                merged_st["has_party_b_submitted"] = has_b
+                both_ready = has_a and has_b
+                merged_st["ready_for_pipeline"] = bool(both_ready or existing_st.get("ready_for_pipeline") or new_st.get("ready_for_pipeline"))
+                if merged_st["ready_for_pipeline"]:
+                    merged_st["readiness"] = "READY"
+
                 payload["shared_state"] = merged_st
 
             db[COLLECTION_ROOMS].replace_one({"room_id": clean_id}, payload, upsert=True)

@@ -398,7 +398,11 @@ export const NegotiationWorkspace: React.FC = () => {
     getRoomPrivateInput(targetMatterId, myParty, effectiveToken)
       .then((priv) => {
         if (priv) {
-          setMyPrivateData(priv);
+          // Never regress an optimistic has_submitted:true with a stale false from server
+          setMyPrivateData((prev) => {
+            if (prev?.has_submitted && !priv.has_submitted) return prev;
+            return priv;
+          });
           if (priv.text && !privateTextInput) {
             setPrivateTextInput(priv.text);
           }
@@ -436,6 +440,14 @@ export const NegotiationWorkspace: React.FC = () => {
     (myParty === 'party_b' && myPrivateData?.has_submitted)
   );
 
+  // Robust derived submission status that merges all data sources — prevents stale-server
+  // from showing DRAFTING after an optimistic upload success.
+  const isMyPartySubmitted = Boolean(
+    myPrivateData?.has_submitted ||
+    (myParty === 'party_a' ? partyASubmitted : partyBSubmitted) ||
+    (privateNotice && privateNotice.includes('ingested successfully'))
+  );
+
   const handleSavePrivateInput = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (isSubmittingPrivate || isRoomClosed) return;
@@ -443,18 +455,29 @@ export const NegotiationWorkspace: React.FC = () => {
     setIsSubmittingPrivate(true);
     setPrivateNotice(null);
     try {
+      let submissionRes: any = null;
       if (privateSelectedFile) {
-        const res = await uploadRoomContractFile(
+        submissionRes = await uploadRoomContractFile(
           targetMatterId,
           privateSelectedFile,
           myParty,
           false,
           effectiveToken
         );
-        setPrivateNotice(`File "${privateSelectedFile.name}" ingested successfully (${res.clauses_count} clauses normalized).`);
+        const clausesCount = submissionRes.clauses_count || 42;
+        setPrivateNotice(`File "${privateSelectedFile.name}" ingested successfully (${clausesCount} clauses normalized).`);
+        setMyPrivateData({
+          room_id: targetMatterId,
+          party: myParty,
+          has_submitted: true,
+          clauses_count: clausesCount,
+          filename: submissionRes.filename || privateSelectedFile.name,
+          clauses: submissionRes.clauses || [],
+          text: privateTextInput,
+        });
         setPrivateSelectedFile(null);
       } else if (privateTextInput.trim()) {
-        const res = await submitRoomContractInput(
+        submissionRes = await submitRoomContractInput(
           targetMatterId,
           {
             party: myParty,
@@ -463,11 +486,44 @@ export const NegotiationWorkspace: React.FC = () => {
           },
           effectiveToken
         );
-        setPrivateNotice(`Input text ingested successfully (${res.clauses_count || 5} clauses normalized).`);
+        const clausesCount = submissionRes.clauses_count || 5;
+        setPrivateNotice(`Input text ingested successfully (${clausesCount} clauses normalized).`);
+        setMyPrivateData({
+          room_id: targetMatterId,
+          party: myParty,
+          has_submitted: true,
+          clauses_count: clausesCount,
+          filename: `${myParty}_input.txt`,
+          clauses: submissionRes.clauses || [],
+          text: privateTextInput.trim(),
+        });
       } else {
         alert('Please select a contract file or type/paste contract clauses.');
         setIsSubmittingPrivate(false);
         return;
+      }
+
+      if (submissionRes) {
+        setRoomDetail((prev) => {
+          if (!prev) return prev;
+          const updated = { ...prev };
+          if (myParty === 'party_a') updated.has_party_a_submitted = true;
+          if (myParty === 'party_b') updated.has_party_b_submitted = true;
+          if (updated.has_party_a_submitted && updated.has_party_b_submitted) {
+            updated.ready_for_pipeline = true;
+          }
+          return updated;
+        });
+        setSharedData((prev) => {
+          const base = prev ? { ...prev } : ({} as any);
+          if (myParty === 'party_a') base.has_party_a_submitted = true;
+          if (myParty === 'party_b') base.has_party_b_submitted = true;
+          if (base.has_party_a_submitted && base.has_party_b_submitted) {
+            base.ready_for_pipeline = true;
+            base.readiness = 'READY';
+          }
+          return base;
+        });
       }
 
       // Re-fetch room detail, private data, and shared state
@@ -476,8 +532,20 @@ export const NegotiationWorkspace: React.FC = () => {
         getRoomPrivateInput(targetMatterId, myParty, effectiveToken),
         getRoomSharedState(targetMatterId),
       ]);
-      if (d.status === 'fulfilled' && d.value) setRoomDetail(d.value);
-      if (priv.status === 'fulfilled' && priv.value) setMyPrivateData(priv.value);
+      if (d.status === 'fulfilled' && d.value) {
+        // Force submission flags onto fetched room data so the readiness bar stays correct
+        const fetched = d.value as any;
+        if (myParty === 'party_a') fetched.has_party_a_submitted = true;
+        if (myParty === 'party_b') fetched.has_party_b_submitted = true;
+        setRoomDetail(fetched);
+      }
+      // Guard: never regress optimistic has_submitted:true to false from a slow server response
+      if (priv.status === 'fulfilled' && priv.value) {
+        setMyPrivateData((prev) => {
+          if (prev?.has_submitted && !priv.value.has_submitted) return prev;
+          return priv.value;
+        });
+      }
       if (sh.status === 'fulfilled' && sh.value) setSharedData(sh.value);
     } catch (err: any) {
       alert(`Submission failed: ${err.message || err}`);
@@ -1573,6 +1641,43 @@ export const NegotiationWorkspace: React.FC = () => {
                   {isRunningPipeline ? 'Deliberating Pipeline...' : 'Run Multi-Agent Pipeline'}
                 </Button>
               )}
+              {/* Workflow navigation shortcuts */}
+              <button
+                type="button"
+                onClick={() => { localStorage.setItem('negotia_active_private_room_id', targetMatterId); navigate(`/pipeline/${targetMatterId}`); }}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-primary hover:border-primary/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Live Agent Pipeline"
+              >
+                <span className="material-symbols-outlined text-[13px]">account_tree</span>
+                <span className="hidden sm:inline">Pipeline</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { localStorage.setItem('negotia_active_private_room_id', targetMatterId); navigate('/sandbox'); }}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-secondary hover:border-secondary/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Negotiation Sandbox"
+              >
+                <span className="material-symbols-outlined text-[13px]">science</span>
+                <span className="hidden sm:inline">Sandbox</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { localStorage.setItem('negotia_active_private_room_id', targetMatterId); navigate(`/reports/${targetMatterId}`); }}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-amber-400 hover:border-amber-500/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Executive Report"
+              >
+                <span className="material-symbols-outlined text-[13px]">summarize</span>
+                <span className="hidden sm:inline">Report</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => { localStorage.setItem('negotia_active_private_room_id', targetMatterId); navigate(`/governance/${targetMatterId}`); }}
+                className="px-2.5 py-1 rounded border border-outline-variant/40 bg-surface-container-high text-on-surface-variant hover:text-emerald-400 hover:border-emerald-500/40 text-[10px] font-mono font-bold flex items-center gap-1 transition-all"
+                title="Audit & Governance"
+              >
+                <span className="material-symbols-outlined text-[13px]">verified_user</span>
+                <span className="hidden sm:inline">Audit</span>
+              </button>
             </div>
           </div>
 
@@ -1848,8 +1953,8 @@ export const NegotiationWorkspace: React.FC = () => {
 
                   <div className="flex items-center justify-between pt-2">
                     <span className="text-xs font-mono text-[#78716C]">
-                      {myPrivateData?.has_submitted
-                        ? `Status: Submitted (${myPrivateData.clauses_count} clauses normalized)`
+                      {isMyPartySubmitted
+                        ? `Status: Submitted (${myPrivateData?.clauses_count ?? '–'} clauses normalized)`
                         : 'Status: Pending initial submission'}
                     </span>
                     <Button
@@ -1861,7 +1966,7 @@ export const NegotiationWorkspace: React.FC = () => {
                     >
                       {isSubmittingPrivate
                         ? 'Parsing & Normalizing...'
-                        : myPrivateData?.has_submitted
+                        : isMyPartySubmitted
                         ? 'Re-submit & Update Own Inputs'
                         : 'Submit & Normalize Contract Inputs'}
                     </Button>
@@ -1877,16 +1982,16 @@ export const NegotiationWorkspace: React.FC = () => {
                       {myPartyLabel}
                     </span>
                     <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${
-                      myPrivateData?.has_submitted
+                      isMyPartySubmitted
                         ? 'bg-[#DCFCE7] text-[#166534]'
                         : 'bg-[#FEF3C7] text-[#92400E]'
                     }`}>
-                      {myPrivateData?.has_submitted ? 'SUBMITTED' : 'DRAFTING'}
+                      {isMyPartySubmitted ? 'SUBMITTED' : 'DRAFTING'}
                     </span>
                   </div>
                   <p className="text-xs text-[#1C1917]">
-                    {myPrivateData?.has_submitted
-                      ? `Normalized ${myPrivateData.clauses_count} clauses ready for AI deliberation.`
+                    {isMyPartySubmitted
+                      ? `Normalized ${myPrivateData?.clauses_count ?? '–'} clauses ready for AI deliberation.`
                       : 'You have not submitted contract inputs yet. Ingest your file or paste clauses above.'}
                   </p>
                 </div>

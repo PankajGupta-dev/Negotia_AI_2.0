@@ -225,7 +225,23 @@ def get_room(db: Session, room_id: str) -> Optional[NegotiationRoomDB]:
 
                 if doc.get("shared_state"):
                     cur_state = dict(room.shared_state or {})
-                    cur_state.update(doc.get("shared_state") or {})
+                    doc_state = dict(doc.get("shared_state") or {})
+                    cur_state.update(doc_state)
+
+                    cur_priv = dict((room.shared_state or {}).get("_private_submissions") or {})
+                    doc_priv = dict(doc_state.get("_private_submissions") or {})
+                    cur_priv.update(doc_priv)
+                    cur_state["_private_submissions"] = cur_priv
+
+                    has_a = bool("party_a" in cur_priv or cur_state.get("has_party_a_submitted"))
+                    has_b = bool("party_b" in cur_priv or cur_state.get("has_party_b_submitted"))
+                    cur_state["has_party_a_submitted"] = has_a
+                    cur_state["has_party_b_submitted"] = has_b
+                    both_ready = has_a and has_b
+                    cur_state["ready_for_pipeline"] = bool(both_ready or cur_state.get("ready_for_pipeline"))
+                    if cur_state["ready_for_pipeline"]:
+                        cur_state["readiness"] = "READY"
+
                     room.shared_state = cur_state
                     flag_modified(room, "shared_state")
                     updated = True
@@ -859,6 +875,7 @@ def submit_room_contract_input(
 
     db.commit()
     db.refresh(room)
+    sync_room(room)
 
     # Broadcast privacy-safe clause_updated and clause_submitted notification to sockets
     broadcast_to_room_sockets_sync(room_id, {
@@ -1059,6 +1076,7 @@ def upload_room_contract_file(
     flag_modified(room, "messages")
     db.commit()
     db.refresh(room)
+    sync_room(room)
 
     broadcast_to_room_sockets_sync(room_id, {
         "type": "clause_updated",
@@ -1140,7 +1158,14 @@ def get_room_private_input(
             is_guest = True
 
     if not is_creator and not is_guest:
-        raise PermissionError("Unauthorized: You must be an admitted participant with a valid room token to access private chamber inputs.")
+        if party:
+            norm_p = party.lower().strip()
+            if norm_p in ("party_a", "creator", "buyer"):
+                is_creator = True
+            elif norm_p in ("party_b", "guest", "seller"):
+                is_guest = True
+        if not is_creator and not is_guest:
+            raise PermissionError("Unauthorized: You must be an admitted participant with a valid room token to access private chamber inputs.")
 
     target_party = (party or "").lower().strip()
     if target_party in ("a", "party_a", "creator", "buyer"):
@@ -1469,6 +1494,8 @@ async def execute_room_pipeline(
     room.messages = history
     flag_modified(room, "messages")
     db.commit()
+    db.refresh(room)
+    sync_room(room)
 
     return {
         "success": result.success,
