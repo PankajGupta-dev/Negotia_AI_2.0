@@ -58,6 +58,7 @@ from app.services.room_service import (
     seal_room_report as svc_seal_room_report,
     submit_room_contract_input as svc_submit_room_contract_input,
     upload_room_contract_file as svc_upload_room_contract_file,
+    validate_chat_message,
 )
 
 logger = logging.getLogger(__name__)
@@ -390,6 +391,13 @@ async def post_room_message_endpoint(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Message text cannot be empty."
+        )
+
+    is_valid, validation_err = validate_chat_message(text)
+    if not is_valid:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Policy violation: {validation_err}"
         )
 
     sender_role = (payload.get("sender_role") or "seller").lower()
