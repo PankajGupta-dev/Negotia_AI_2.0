@@ -697,7 +697,24 @@ class Agent3Arbiter(BaseAgent):
         )
 
         # ── Route: LLM-enhanced or deterministic ────────────────────
-        if settings.GEMINI_API_KEY:
+        if settings.QWEN_API_KEY:
+            try:
+                self.emit_event(
+                    thought=f"[Mode: LLM] Invoking Qwen LLM ({settings.QWEN_MODEL}) for semantic verdict enrichment...",
+                    matter_id=matter_id,
+                )
+                logger.info(f"[AGENT 3] Mode: LLM | Attempting semantic verdict enrichment via Qwen ({settings.QWEN_MODEL}).")
+                result = self._analyze_with_qwen(
+                    agent1_output, agent2_output, negotiation_output,
+                    financial_context, external_evidence,
+                    a1_map, a2_map, a2_findings_map, neg_map,
+                    matter_id,
+                )
+                logger.info("[AGENT 3] Mode: LLM | Successfully enriched verdicts via Qwen with deterministic validation.")
+                return result
+            except Exception as err:
+                logger.warning(f"[AGENT 3] Qwen failed: {err}. Falling back to secondary provider or deterministic compromise scoring.")
+        elif settings.GEMINI_API_KEY:
             try:
                 self.emit_event(
                     thought="[Mode: LLM] Invoking Gemini for semantic verdict enrichment...",
@@ -955,6 +972,35 @@ class Agent3Arbiter(BaseAgent):
         )
 
         return "  ".join(parts)
+
+    # ═════════════════════════════════════════════════════════════════════════
+    # LLM-Enhanced: Qwen
+    # ═════════════════════════════════════════════════════════════════════════
+
+    def _analyze_with_qwen(
+        self,
+        agent1_output: LexIngestorAOutput,
+        agent2_output: LexIngestorBOutput,
+        negotiation_output: NegotiationEngineOutput,
+        financial_context: Dict[str, Any],
+        external_evidence: List[Dict[str, Any]],
+        a1_map: Dict[str, ClassifiedClause],
+        a2_map: Dict[str, ClauseRiskProfile],
+        a2_findings_map: Dict[str, List[RiskFinding]],
+        neg_map: Dict[str, ClauseNegotiationResult],
+        matter_id: Optional[str],
+    ) -> ArbiterOutput:
+        from app.services.llm_client import call_qwen_chat
+
+        det_result = self._deterministic_verdicts(
+            negotiation_output, a1_map, a2_map, a2_findings_map, neg_map,
+            financial_context, external_evidence, matter_id,
+        )
+
+        prompt = self._build_llm_prompt(det_result, financial_context, external_evidence)
+        raw_text = call_qwen_chat(prompt, json_mode=True)
+
+        return self._merge_llm_enrichment(raw_text, det_result, matter_id)
 
     # ═════════════════════════════════════════════════════════════════════════
     # LLM-Enhanced: Gemini

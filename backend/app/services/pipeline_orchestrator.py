@@ -353,8 +353,8 @@ class PipelineOrchestrator:
                 status=MatterStatus.ACTIVE,
             )
 
-            llm_available = bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY)
-            llm_engine = "Gemini" if settings.GEMINI_API_KEY else ("OpenAI" if settings.OPENAI_API_KEY else "NONE (Offline Deterministic)")
+            llm_available = bool(settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY)
+            llm_engine = f"Qwen ({settings.QWEN_MODEL})" if settings.QWEN_API_KEY else ("Gemini" if settings.GEMINI_API_KEY else ("OpenAI" if settings.OPENAI_API_KEY else "NONE (Offline Deterministic)"))
             logger.info(f"[PIPELINE ORCHESTRATOR] Initialized for Matter {matter_id} | LLM Engine: {llm_engine} | Mode: {'LLM' if llm_available else 'FALLBACK'}")
 
             self.emit_event(
@@ -636,7 +636,7 @@ class PipelineOrchestrator:
                 role="review_boundary",
                 message="Deliberation stage complete. Position recommendations finalized. Status: PENDING HUMAN REVIEW.",
                 status="pending_review",
-                source="LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK",
+                source="LLM" if (settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK",
             )
 
             duration = round(time.time() - start_time, 2)
@@ -1344,7 +1344,7 @@ class PipelineOrchestrator:
 
         from app.services.event_manager import event_manager
         from app.config import settings
-        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+        source_val = "LLM" if (settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
 
         for c in a1_output.classified_clauses:
             msg = f"{c.section_number} ({c.title}): Baseline position established. {c.summary} Preferred position: '{c.preferred_position}'."
@@ -1369,7 +1369,7 @@ class PipelineOrchestrator:
 
         from app.services.event_manager import event_manager
         from app.config import settings
-        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+        source_val = "LLM" if (settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
 
         for p in a2_output.clause_risk_profiles:
             risk_val = round(p.composite_risk_score, 1)
@@ -1395,7 +1395,7 @@ class PipelineOrchestrator:
 
         from app.services.event_manager import event_manager
         from app.config import settings
-        source_val = "LLM" if (settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
+        source_val = "LLM" if (settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY) else "FALLBACK"
 
         all_clause_ids = [v.clause_id for v in a3_output.verdicts]
 

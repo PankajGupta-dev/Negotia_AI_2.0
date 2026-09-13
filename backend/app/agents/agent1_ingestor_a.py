@@ -88,7 +88,20 @@ class Agent1LexIngestorA(BaseAgent):
         )
 
         # 2. Attempt LLM analysis if API key is configured
-        if settings.GEMINI_API_KEY:
+        if settings.QWEN_API_KEY:
+            try:
+                self.emit_event(
+                    thought=f"[Mode: LLM] Invoking Qwen LLM ({settings.QWEN_MODEL}) for forensic position mapping...",
+                    matter_id=matter_id,
+                )
+                logger.info(f"[AGENT 1] Mode: LLM | Attempting semantic extraction via Qwen ({settings.QWEN_MODEL}).")
+                result = self._analyze_with_qwen(clauses, matter_id)
+                validated = self._validate_and_reconcile_output(result, clauses, matter_id)
+                logger.info("[AGENT 1] Mode: LLM | Successfully extracted positions via Qwen with deterministic validation.")
+                return validated
+            except Exception as err:
+                logger.warning(f"[AGENT 1] Qwen API call failed: {err}. Falling back to secondary provider or deterministic extraction.")
+        elif settings.GEMINI_API_KEY:
             try:
                 self.emit_event(
                     thought="[Mode: LLM] Invoking Google Gemini LLM for forensic position mapping...",
@@ -217,6 +230,45 @@ class Agent1LexIngestorA(BaseAgent):
             non_negotiables=non_negotiables,
             preferred_positions=preferred_positions,
         )
+
+    def _analyze_with_qwen(
+        self, clauses: List[Dict[str, Any]], matter_id: Optional[str]
+    ) -> LexIngestorAOutput:
+        from app.services.llm_client import call_qwen_chat
+
+        prompt = f"""
+You are Agent 1 (Lex-Ingestor A), forensic document analyst for Party A baseline contract.
+Analyze the provided clauses and output ONLY valid JSON matching this schema:
+{{
+  "classified_clauses": [
+    {{
+      "clause_id": "string",
+      "section_number": "string",
+      "title": "string",
+      "category": "liability|payment|termination|ip|confidentiality|governing_law|general",
+      "summary": "string",
+      "is_non_negotiable": boolean,
+      "preferred_position": "string"
+    }}
+  ],
+  "obligations": [{{"clause_id": "string", "description": "string"}}],
+  "liability_boundaries": [{{"clause_id": "string", "cap_description": "string"}}],
+  "payment_terms": [{{"clause_id": "string", "terms": "string"}}],
+  "termination_terms": [{{"clause_id": "string", "notice_period": "string"}}],
+  "non_negotiables": ["clause_id"],
+  "preferred_positions": [{{"clause_id": "string", "position": "string"}}]
+}}
+
+Rules:
+- DO NOT invent clause_ids. Use ONLY clause_ids present in the clauses below.
+
+CLAUSES:
+{json.dumps(clauses, indent=2)}
+"""
+        raw_text = call_qwen_chat(prompt, json_mode=True)
+        parsed = self.parse_structured_output(raw_text, schema=LexIngestorAOutput)
+        parsed.matter_id = matter_id
+        return parsed
 
     def _analyze_with_gemini(
         self, clauses: List[Dict[str, Any]], matter_id: Optional[str]

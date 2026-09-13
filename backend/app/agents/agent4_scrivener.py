@@ -897,7 +897,24 @@ Return plain markdown text only.
         and structured fallback from pipeline data.
         """
         # 1. Attempt LLM semantic synthesis if configured
-        if settings.GEMINI_API_KEY:
+        if settings.QWEN_API_KEY:
+            try:
+                self.emit_event(
+                    thought=f"[Mode: LLM] Invoking Qwen LLM ({settings.QWEN_MODEL}) for executive dossier editorial synthesis...",
+                    matter_id=m_id,
+                )
+                logger.info(f"[AGENT 4] Mode: LLM | Attempting semantic executive brief synthesis via Qwen ({settings.QWEN_MODEL}).")
+                from app.services.llm_client import call_qwen_chat
+                prompt = self._build_executive_summary_prompt(
+                    m_id, docket_num, m_title, buyer, counterparty, key_changes, legal_summary, commercial_impact, counsel_estimate, v_metrics
+                )
+                text = call_qwen_chat(prompt, json_mode=False).strip()
+                if text and len(text) > 120:
+                    logger.info("[AGENT 4] Mode: LLM | Successfully synthesized executive brief via Qwen with deterministic validation.")
+                    return text
+            except Exception as err:
+                logger.warning(f"[AGENT 4] Qwen LLM call failed: {err}. Falling back to secondary provider or structured synthesis.")
+        elif settings.GEMINI_API_KEY:
             try:
                 self.emit_event(
                     thought="[Mode: LLM] Invoking Gemini for executive dossier editorial synthesis...",

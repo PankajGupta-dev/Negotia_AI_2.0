@@ -6,12 +6,15 @@ from app.services.room_service import validate_chat_message
 client = TestClient(app)
 
 def test_validate_chat_message_unit():
-    # Valid messages
+    # Valid messages (including normal numbers with spaces, commas, or under 10 digits)
     valid_samples = [
         "Hello counsel, we agree with the terms.",
-        "We agree to the termination clause without penalty.",
-        "Our legal counsel has reviewed the indemnity provision.",
-        "Can we schedule our session for next week?",
+        "We agree to Section 2 clause 4 without penalty.",
+        "Our legal counsel has reviewed the indemnity provision for 30 days.",
+        "The settlement price is 500 dollars.",
+        "The cap is $1,000,000.",
+        "Can we schedule our session for next week at 3pm?",
+        "Call me at 123 456 7890 please.", # Has spaces between numbers
         "Accepted without conditions."
     ]
     for s in valid_samples:
@@ -19,22 +22,18 @@ def test_validate_chat_message_unit():
         assert valid is True, f"Expected '{s}' to be valid, got err: {err}"
         assert err is None
 
-    # Invalid: Numbers
-    number_samples = [
-        "The price is 500 dollars",
-        "Section 2 clause 4",
-        "We propose an increase of 10 percent",
-        "Our valuation is $1,000,000",
-        "Let us meet at 3pm",
-        "Clause 1",
-        "Option A vs Option B with 0 down",
-        "Version 2.0 of contract",
-        "Room 101"
+    # Invalid: 10 integers written without spaces
+    ten_digit_samples = [
+        "Call me at 9876543210 immediately",
+        "Phone: 1234567890",
+        "My contact number is 9988776655",
+        "Direct line 0123456789",
+        "Account 123456789012"
     ]
-    for s in number_samples:
+    for s in ten_digit_samples:
         valid, err = validate_chat_message(s)
-        assert valid is False, f"Expected '{s}' to be rejected for numbers"
-        assert "Numbers are not permitted" in err
+        assert valid is False, f"Expected '{s}' to be rejected for 10 integers without spaces"
+        assert "Phone numbers are not permitted" in err
 
     # Invalid: URLs and URIs
     url_samples = [
@@ -67,15 +66,15 @@ def test_post_room_message_rejections():
     room_data = create_res.json()
     room_id = room_data["room_id"]
 
-    # 2. Try sending message with number
+    # 2. Try sending message with 10 integers without spaces
     num_res = client.post(f"/api/rooms/{room_id}/messages", json={
-        "text": "Offering 50000 dollars settlement",
+        "text": "Call me directly on 9876543210 for terms",
         "sender_role": "buyer",
         "sender_name": "Elena Rostova"
     })
     assert num_res.status_code == 400
     assert "Policy violation" in num_res.json()["detail"]
-    assert "Numbers are not permitted" in num_res.json()["detail"]
+    assert "Phone numbers are not permitted" in num_res.json()["detail"]
 
     # 3. Try sending message with URL
     url_res = client.post(f"/api/rooms/{room_id}/messages", json={
@@ -97,15 +96,15 @@ def test_post_room_message_rejections():
     assert "Policy violation" in uri_res.json()["detail"]
     assert "URLs and URIs are not permitted" in uri_res.json()["detail"]
 
-    # 5. Send valid text message
+    # 5. Send valid text message with regular negotiation numbers
     valid_res = client.post(f"/api/rooms/{room_id}/messages", json={
-        "text": "We accept your counterproposal on warranty terms.",
+        "text": "We accept your counterproposal on Section 2 with 30 days notice.",
         "sender_role": "buyer",
         "sender_name": "Elena Rostova"
     })
     assert valid_res.status_code == 200
     assert valid_res.json()["status"] == "success"
-    assert valid_res.json()["message"]["text"] == "We accept your counterproposal on warranty terms."
+    assert valid_res.json()["message"]["text"] == "We accept your counterproposal on Section 2 with 30 days notice."
 
 
 def test_ws_room_message_rejections():
@@ -128,15 +127,15 @@ def test_ws_room_message_rejections():
         init_evt = ws.receive_json()
         assert init_evt["type"] in ("participant_connected", "join")
 
-        # 3. Send message with numbers -> expect error
+        # 3. Send message with 10 integers without spaces -> expect error
         ws.send_json({
             "type": "message",
-            "text": "Let us settle for 100000 dollars"
+            "text": "Contact counsel at 9876543210"
         })
         err_evt = ws.receive_json()
         assert err_evt["type"] == "room_error"
         assert "Policy violation" in err_evt["error"]
-        assert "Numbers are not permitted" in err_evt["error"]
+        assert "Phone numbers are not permitted" in err_evt["error"]
 
         # 4. Send message with URL -> expect error
         ws.send_json({
@@ -148,12 +147,11 @@ def test_ws_room_message_rejections():
         assert "Policy violation" in err_evt2["error"]
         assert "URLs and URIs are not permitted" in err_evt2["error"]
 
-        # 5. Send valid message -> expect message event
+        # 5. Send valid message with normal numbers -> expect message event
         ws.send_json({
             "type": "message",
-            "text": "We agree with your proposal on confidentiality."
+            "text": "We agree with Section 3 for 500 dollars."
         })
         ok_evt = ws.receive_json()
         assert ok_evt["type"] == "message"
-        assert ok_evt["text"] == "We agree with your proposal on confidentiality."
-
+        assert ok_evt["text"] == "We agree with Section 3 for 500 dollars."

@@ -77,13 +77,13 @@ const resolveSenderName = (rawName?: string, rawRole?: string): string => {
 };
 
 // 2-Way Bilateral Chat Policy Regexes
-export const CHAT_NUMBER_REGEX = /\d|\p{N}/u;
+export const CHAT_10_INTEGERS_REGEX = /\d{10}/;
 export const CHAT_URL_URI_REGEX = /(?:[a-zA-Z][a-zA-Z0-9+.-]*:\/\/\S+|www\.[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\S*|\b[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|ai|co|app|dev|biz|info|tech|online|xyz|law|legal|in|uk|de|ca|au|me|eu|us)(?:\/\S*)?\b|(?:mailto|tel|urn|data|javascript):\S+)/i;
 
 export function validateChatMessage(text: string): { isValid: boolean; error?: string } {
   if (!text) return { isValid: true };
-  if (CHAT_NUMBER_REGEX.test(text)) {
-    return { isValid: false, error: 'Numbers are not permitted in 2-way chat.' };
+  if (CHAT_10_INTEGERS_REGEX.test(text)) {
+    return { isValid: false, error: 'Phone numbers are not permitted in 2-way chat.' };
   }
   if (CHAT_URL_URI_REGEX.test(text)) {
     return { isValid: false, error: 'URLs and URIs are not permitted in 2-way chat.' };
@@ -3055,9 +3055,6 @@ export const NegotiationWorkspace: React.FC = () => {
                       <span>{chatValidation.error}</span>
                     </div>
                   )}
-                  <p className="text-[10px] font-mono text-[#78716C] leading-tight">
-                    Policy: Numbers and URLs/URIs are strictly prohibited in 2-way chat.
-                  </p>
                 </form>
               </div>
             ) : (

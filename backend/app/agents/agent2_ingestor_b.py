@@ -287,7 +287,23 @@ class Agent2LexIngestorB(BaseAgent):
         )
 
         # ── Attempt LLM-enhanced analysis ────────────────────────────────
-        if settings.GEMINI_API_KEY:
+        if settings.QWEN_API_KEY:
+            try:
+                self.emit_event(
+                    thought=f"[Mode: LLM] Invoking Qwen LLM ({settings.QWEN_MODEL}) for semantic deviation analysis...",
+                    matter_id=matter_id,
+                )
+                logger.info(f"[AGENT 2] Mode: LLM | Attempting semantic deviation analysis via Qwen ({settings.QWEN_MODEL}).")
+                result = self._analyze_with_qwen(
+                    party_a_clauses, party_b_clauses, diffs, a_map, b_map, matter_id,
+                )
+                logger.info("[AGENT 2] Mode: LLM | Successfully enriched risk profiles via Qwen with deterministic validation.")
+                return result
+            except Exception as err:
+                logger.warning(
+                    f"[AGENT 2] Qwen API call failed: {err}. Falling back to secondary provider or deterministic risk rules."
+                )
+        elif settings.GEMINI_API_KEY:
             try:
                 self.emit_event(
                     thought="[Mode: LLM] Invoking Google Gemini for semantic deviation analysis...",
@@ -543,6 +559,25 @@ class Agent2LexIngestorB(BaseAgent):
             risk_summary=risk_summary,
             total_findings=len(all_findings),
             high_risk_clause_ids=high_risk_ids,
+        )
+
+    def _analyze_with_qwen(
+        self,
+        party_a_clauses: List[Dict[str, Any]],
+        party_b_clauses: List[Dict[str, Any]],
+        diffs: List[Dict[str, Any]],
+        a_map: Dict[str, Dict[str, Any]],
+        b_map: Dict[str, Dict[str, Any]],
+        matter_id: Optional[str],
+    ) -> LexIngestorBOutput:
+        from app.services.llm_client import call_qwen_chat
+
+        deterministic_result = self._deterministic_analysis(diffs, a_map, b_map, matter_id)
+        prompt = self._build_llm_prompt(party_a_clauses, party_b_clauses, diffs)
+
+        raw_text = call_qwen_chat(prompt, json_mode=True)
+        return self._merge_llm_with_deterministic(
+            raw_text, deterministic_result, matter_id,
         )
 
     # ═════════════════════════════════════════════════════════════════════════

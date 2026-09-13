@@ -35,19 +35,19 @@ URL_URI_PATTERN = re.compile(
     r'|\b(?:mailto|tel|urn|data|javascript):[^\s]+'
     r')'
 )
-NUMBER_PATTERN = re.compile(r'\d')
+TEN_INTEGERS_PATTERN = re.compile(r'\d{10}')
 
 
 def validate_chat_message(text: str) -> tuple[bool, Optional[str]]:
     """
     Validates a 2-way bilateral negotiation chat message.
-    Strictly prohibits numbers (any digit) and URLs/URIs.
+    Strictly prohibits 10 consecutive integers written without spaces and URLs/URIs.
     Returns (is_valid, error_message).
     """
     if not text:
         return True, None
-    if NUMBER_PATTERN.search(text):
-        return False, "Numbers are not permitted in 2-way chat messages."
+    if TEN_INTEGERS_PATTERN.search(text):
+        return False, "Phone numbers are not permitted in 2-way chat."
     if URL_URI_PATTERN.search(text):
         return False, "URLs and URIs are not permitted in 2-way chat messages."
     return True, None

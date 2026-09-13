@@ -4,6 +4,9 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     APP_NAME: str = "Negotia AI API"
     ENVIRONMENT: str = "development"
+    QWEN_API_KEY: str = ""
+    QWEN_BASE_URL: str = "https://dashscope-intl.aliyuncs.com/compatible-mode/v1"
+    QWEN_MODEL: str = "qwen-plus"
     GEMINI_API_KEY: str = ""
     OPENAI_API_KEY: str = ""
     DATABASE_URL: str = "sqlite:///./negotia.db"

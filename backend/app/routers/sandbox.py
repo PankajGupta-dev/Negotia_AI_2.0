@@ -386,7 +386,7 @@ def test_sandbox_agent(req: SandboxAgentRequest) -> SandboxAgentResponse:
     category = req.category or "liability"
     counterparty_text = req.counterparty_text or DEFAULT_COUNTERPARTY_TEXT
 
-    is_llm_active = bool(settings.GEMINI_API_KEY or settings.OPENAI_API_KEY)
+    is_llm_active = bool(settings.QWEN_API_KEY or settings.GEMINI_API_KEY or settings.OPENAI_API_KEY)
     exec_mode = "LLM" if is_llm_active else "FALLBACK"
     sandbox_matter_id = "sandbox_sim_matter"
 
