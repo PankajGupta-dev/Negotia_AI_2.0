@@ -421,7 +421,7 @@ export const Dashboard: React.FC = () => {
                   <div className="w-7 h-7 rounded bg-surface-container-high border border-outline-variant/40 flex items-center justify-center shrink-0 mt-0.5">
                     <span className="material-symbols-outlined text-[15px] text-primary">
                       {act.type === 'autonomous'
-                        ? 'auto_awesome'
+                        ? 'smart_toy'
                         : act.type === 'alert'
                         ? 'warning'
                         : act.type === 'signing'

@@ -99,18 +99,7 @@ export const Landing: React.FC = () => {
           </div>
 
           <div className="max-w-7xl mx-auto px-space-base sm:px-space-lg relative z-10 flex flex-col items-center text-center">
-            {/* Editorial Overline Badge */}
-            <div className="inline-flex items-center gap-2 px-3 py-1 rounded
-              bg-surface-container-low/90 backdrop-blur-sm
-              border border-outline-variant/50
-              shadow-lg mb-space-lg
-              hover:border-primary/60 hover:shadow-[0_0_20px_rgba(217,119,6,0.15)]
-              transition-all duration-300 cursor-default group/badge">
-              <span className="w-2 h-2 rounded-full bg-primary-container animate-pulse group-hover/badge:bg-primary transition-colors duration-200" />
-              <span className="font-mono text-[11px] tracking-widest uppercase text-primary font-medium group-hover/badge:text-amber-300 transition-colors duration-200">
-                Autonomous Contract Reasoning for GC & Enterprise Legal
-              </span>
-            </div>
+
 
             {/* Main Display Headline */}
             <h1 className="font-belgina text-3xl sm:text-5xl md:text-6xl lg:text-7xl text-on-surface max-w-4xl tracking-tight leading-[1.15] drop-shadow-[0_2px_14px_rgba(0,0,0,0.85)]">
@@ -152,7 +141,7 @@ export const Landing: React.FC = () => {
                   const el = document.getElementById('features');
                   el?.scrollIntoView({ behavior: 'smooth' });
                 }}
-                className="w-full sm:w-auto backdrop-blur-sm bg-surface-container-high/90 hover:bg-surface-container-high shadow-xl border border-outline-variant/40"
+                className="w-full sm:w-auto bg-white hover:bg-slate-100 text-[#1C1917] font-bold shadow-xl border border-white/80"
               >
                 See How It Works
               </Button>

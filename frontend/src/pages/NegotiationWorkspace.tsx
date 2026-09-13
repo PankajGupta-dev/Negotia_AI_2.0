@@ -1683,7 +1683,6 @@ export const NegotiationWorkspace: React.FC = () => {
                 <Button
                   variant="primary"
                   size="sm"
-                  icon="auto_awesome"
                   onClick={handleRunPipeline}
                   disabled={isRunningPipeline || isRoomClosed}
                   className="!bg-emerald-600 hover:!bg-emerald-500 !text-white font-bold text-xs shadow-md"
@@ -2117,7 +2116,6 @@ export const NegotiationWorkspace: React.FC = () => {
                         : 'bg-[#EDE7DC] text-[#1C1917] hover:bg-[#D6CEBE]'
                     }`}
                   >
-                    <span className="material-symbols-outlined text-xs">auto_awesome</span>
                     <span>Safe AI Results</span>
                   </button>
                 </div>
@@ -2273,7 +2271,6 @@ export const NegotiationWorkspace: React.FC = () => {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between pb-2 border-b border-[#D6CEBE]">
                     <div className="flex items-center gap-2">
-                      <span className="material-symbols-outlined text-[#D97706] text-xl">auto_awesome</span>
                       <h3 className="font-headline-md text-base font-bold text-[#1C1917]">
                         Safe AI Deliberation Results (Agent 1-4 Architecture)
                       </h3>
@@ -2574,9 +2571,6 @@ export const NegotiationWorkspace: React.FC = () => {
                         <div className="space-y-1">
                           <div className="flex items-center justify-between">
                             <span className="font-mono text-[10px] uppercase tracking-wider text-[#166534] font-semibold flex items-center gap-1">
-                              <span className="material-symbols-outlined text-xs text-[#166534]">
-                                auto_awesome
-                              </span>
                               Negotia Autonomous Conformed Proposal:
                             </span>
                             <span className="font-mono text-[10px] text-[#166534] bg-[#DCFCE7] px-1.5 py-0.5 rounded">
@@ -3175,7 +3169,6 @@ export const NegotiationWorkspace: React.FC = () => {
                               {evt.recommendation && (
                                 <div className="p-1.5 bg-[#FEF3C7] border border-[#FCD34D] rounded space-y-0.5">
                                   <span className="font-mono text-[10px] font-bold text-[#92400E] flex items-center gap-1 uppercase">
-                                    <span className="material-symbols-outlined text-[12px]">auto_awesome</span>
                                     Recommended Compromise
                                   </span>
                                   <p className="text-[#1C1917] font-semibold text-[11px]">

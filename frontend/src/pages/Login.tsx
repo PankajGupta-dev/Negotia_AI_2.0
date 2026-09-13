@@ -300,27 +300,27 @@ export const Login: React.FC = () => {
               type="button"
               id="demo-unified-btn"
               onClick={() => handleDemoLogin('unified_demo')}
-              className="w-full flex items-center justify-between p-3 bg-gradient-to-r from-primary-container/20 via-surface-container-lowest to-secondary-container/20 hover:from-primary-container/30 hover:to-secondary-container/30 border border-primary/40 hover:border-primary rounded-lg transition-all duration-150 group shadow-sm"
+              className="w-full flex items-center justify-between p-3.5 bg-gradient-to-r from-[#D97706] via-[#B45309] to-[#92400E] hover:from-[#F59E0B] hover:via-[#D97706] hover:to-[#B45309] border border-[#FCD34D]/40 hover:border-[#FCD34D] rounded-xl transition-all duration-200 group shadow-md hover:shadow-amber-900/40"
             >
               <div className="flex items-center gap-3">
-                <div className="w-8 h-8 rounded-full bg-primary/20 border border-primary/40 flex items-center justify-center font-serif text-primary font-bold text-xs shrink-0">
+                <div className="w-8 h-8 rounded-full bg-white/20 border border-white/40 flex items-center justify-center font-serif text-white font-bold text-xs shrink-0 shadow-inner">
                   ND
                 </div>
                 <div className="flex flex-col items-start text-left">
                   <div className="flex items-center gap-2">
-                    <span className="font-semibold text-xs text-on-surface group-hover:text-white transition-colors">
+                    <span className="font-bold text-xs text-white tracking-tight">
                       Negotiation Demo
                     </span>
-                    <span className="font-mono text-[9px] px-1.5 py-0.2 bg-primary/20 text-primary border border-primary/30 rounded font-bold uppercase">
+                    <span className="font-mono text-[9px] px-1.5 py-0.5 bg-white/20 text-white border border-white/40 rounded font-bold uppercase backdrop-blur-xs">
                       Unified Counsel
                     </span>
                   </div>
-                  <span className="font-mono text-[10px] text-outline">
+                  <span className="font-mono text-[10px] text-amber-100/90 font-medium">
                     Full Buyer + Seller access · Bilateral Workspace
                   </span>
                 </div>
               </div>
-              <span className="material-symbols-outlined text-primary text-sm shrink-0 group-hover:translate-x-0.5 transition-transform">
+              <span className="material-symbols-outlined text-white text-base shrink-0 group-hover:translate-x-1 transition-transform">
                 arrow_forward
               </span>
             </button>

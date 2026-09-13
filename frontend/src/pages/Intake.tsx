@@ -384,7 +384,6 @@ export const Intake: React.FC = () => {
             <Button
               variant="primary"
               size="lg"
-              icon="auto_awesome"
               disabled={isProcessing}
               onClick={handleStartIngestion}
               className="w-full sm:w-auto px-8 py-3.5 text-sm font-bold shadow-md hover:shadow-lg transition-all"
